@@ -1,0 +1,92 @@
+# Unity .gitignore
+# Basado en https://github.com/github/gitignore/blob/main/Unity.gitignore
+
+# Carpetas generadas por Unity, incluso dentro de subcarpetas
+**/.utmp/
+**/[Ll]ibrary/
+**/[Tt]emp/
+**/[Oo]bj/
+**/[Bb]uild/
+**/[Bb]uilds/
+**/[Ll]ogs/
+**/[Uu]ser[Ss]ettings/
+*.log
+
+# Archivos de respaldo de Blender
+*.blend1
+*.blend1.meta
+
+# Capturas de memoria y grabaciones
+**/[Mm]emoryCaptures/
+**/[Rr]ecordings/
+
+# Descomenta para ignorar el plugin Asset Store Tools
+# **/[Aa]ssets/AssetStoreTools*
+
+# Plugin generado por JetBrains Rider
+**/[Aa]ssets/Plugins/Editor/JetBrains*
+*.DotSettings.user
+
+# Caché de Visual Studio y Gradle
+**/.vs/
+**/.gradle/
+
+# Archivos generados por los editores de código
+ExportedObj/
+.consulo/
+*.csproj
+*.unityproj
+*.sln
+*.slnx
+*.suo
+*.tmp
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# Metadatos de archivos generados
+*.pidb.meta
+*.pdb.meta
+*.mdb.meta
+
+# Reportes de errores
+sysinfo.txt
+mono_crash.*
+
+# Compilaciones y paquetes exportados
+*.apk
+*.aab
+*.unitypackage
+*.unitypackage.meta
+*.app
+
+# Archivo generado por Crashlytics
+crashlytics-build.properties
+
+# Archivos generados por TestRunner
+InitTestScene*.unity*
+
+# Archivos generados por Addressables
+**/ServerData/
+**/[Aa]ssets/StreamingAssets/aa*
+**/[Aa]ssets/AddressableAssetsData/link.xml*
+**/[Aa]ssets/Addressables_Temp*
+**/[Aa]ssets/AddressableAssetsData/*/*.bin*
+
+# Archivos generados por Visual Scripting
+**/[Aa]ssets/Unity.VisualScripting.Generated/VisualScripting.Flow/UnitOptions.db
+**/[Aa]ssets/Unity.VisualScripting.Generated/VisualScripting.Flow/UnitOptions.db.meta
+**/[Aa]ssets/Unity.VisualScripting.Generated/VisualScripting.Core/Property Providers
+**/[Aa]ssets/Unity.VisualScripting.Generated/VisualScripting.Core/Property Providers.meta
+
+# Escenas generadas por pruebas
+**/[Aa]ssets/[Ii]nit[Tt]est[Ss]cene*.unity*
+
+# Caché generado dentro de Assets
+**/[Aa]ssets/[Ss]ceneDependencyCache*
