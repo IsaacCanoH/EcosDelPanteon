@@ -7,6 +7,10 @@ public class GoldCoinCollector : MonoBehaviour
     public int requiredCoins = 3;
     public int collectedCoins = 0;
 
+    [Header("Sonido de recolección")]
+    public AudioSource audioRecoleccion;
+    public AudioClip sonidoRecoleccion;
+
     public event Action OnAllCoinsCollected;
 
     public void CollectCoin()
@@ -16,8 +20,16 @@ public class GoldCoinCollector : MonoBehaviour
 
         collectedCoins++;
 
-        Debug.Log("Monedas de oro: " +
-                  collectedCoins + "/" + requiredCoins);
+        // Reproducir una vez por cada moneda recogida.
+        if (audioRecoleccion != null &&
+            sonidoRecoleccion != null)
+        {
+            audioRecoleccion.PlayOneShot(sonidoRecoleccion);
+        }
+
+        Debug.Log(
+            "Monedas de oro: " +
+            collectedCoins + "/" + requiredCoins);
 
         if (collectedCoins == requiredCoins)
         {
