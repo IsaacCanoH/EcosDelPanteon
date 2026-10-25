@@ -14,6 +14,24 @@ public class GoblinAI : MonoBehaviour
     public float detectionRadius = 4f;
     public float stopDistance = 0.8f;
 
+    [Header("Activacion")]
+    public bool waitForFirstCoin;
+    public bool increaseSpeedAfterSecondCoin = true;
+
+    [Header("Rondines y deteccion")]
+    public bool enablePatrol;
+    [Min(0.2f)] public float patrolRadius = 2f;
+    [Min(0.1f)] public float patrolSpeed = 0.65f;
+    [Min(0.1f)] public float patrolPauseMin = 0.8f;
+    [Min(0.1f)] public float patrolPauseMax = 1.8f;
+    [Min(0.1f)] public float noticeRadius = 3f;
+    [Min(0.1f)] public float trackingRadius = 6f;
+    [Min(0.1f)] public float noticeSeconds = 0.7f;
+    [Min(0.1f)] public float loseSightSeconds = 3f;
+    [Min(0.1f)] public float investigationSeconds = 1.5f;
+
+    public enum AwarenessState { Patrol, Suspicious, Chasing, Searching, Returning }
+
     [Header("Obstaculos")]
     public LayerMask obstacleMask;
 
@@ -21,6 +39,28 @@ public class GoblinAI : MonoBehaviour
     public float attackRange = 1f;
     public float attackCooldown = 1.5f;
     public int attackDamage = 1;
+
+    [Header("Acometida opcional")]
+    public bool enableLungeAttack;
+    public float windupSeconds = 0.4f;
+    public float lungeDistance = 0.85f;
+    public float lungeSeconds = 0.18f;
+    public float recoverySeconds = 0.65f;
+    private bool windingUp;
+    private bool lunging;
+    private bool lungeHit;
+    private Vector2 lungeDirection;
+    private float lungeTravelled;
+    public bool IsWindingUp { get { return windingUp; } }
+
+    public void BeginWaveCombat(int wave)
+    {
+        enableLungeAttack = true;
+        attackRange = 1.6f;
+        attackCooldown = Mathf.Max(1.15f, 1.65f - (wave - 1) * 0.2f);
+        nextAttackTime = Mathf.Max(nextAttackTime, Time.time + Random.Range(0.15f, 0.55f));
+        Alert();
+    }
 
     [Header("Navegacion")]
     public float repathInterval = 0.6f;
@@ -46,6 +86,7 @@ public class GoblinAI : MonoBehaviour
     private bool isAttacking;
     private bool nextAttackIsTwo;
     private bool chasing;
+    private bool individuallyAlerted;
 
     private float nextAttackTime;
     private float nextRepath;
@@ -57,6 +98,120 @@ public class GoblinAI : MonoBehaviour
     private Vector2 recoveryDirection;
 
     private int waypoint;
+    private bool navigationRequested;
+    private Vector2 homePosition;
+    private Vector2 movementGoal;
+    private Vector2 lastSeenPosition;
+    private AwarenessState awareness;
+    private float suspicion;
+    private float lastSeenAt;
+    private float nextPatrolDecision;
+    private float patrolDeadline;
+    private float investigationDeadline;
+    private float investigationUntil = -1f;
+    private bool hasPatrolGoal;
+
+    private float stunnedUntil;
+    private bool stunActive;
+    private RigidbodyConstraints2D constraintsBeforeStun;
+
+    public bool IsStunned { get { return isActiveAndEnabled && stunActive && Time.time < stunnedUntil; } }
+    public float StunRemaining { get { return IsStunned ? Mathf.Max(0f, stunnedUntil - Time.time) : 0f; } }
+
+    // Cada impacto reinicia el plazo, sin acumularlo.
+    public bool Stun(float seconds)
+    {
+        if (!isActiveAndEnabled || seconds <= 0f || player == null ||
+            (playerHealth != null && playerHealth.currentHealth <= 0) ||
+            (coinCollector != null && coinCollector.IsLevelFinished))
+            return false;
+
+        Alert();
+        StopAllCoroutines();
+        windingUp = lunging = false;
+        isAttacking = chasing = navigationRequested = false;
+        if (!stunActive) constraintsBeforeStun = rb.constraints;
+        stunActive = true;
+        stunnedUntil = Time.time + seconds;
+        rb.velocity = Vector2.zero;
+        rb.angularVelocity = 0f;
+        rb.constraints = RigidbodyConstraints2D.FreezeAll;
+        path.Clear();
+        recoveryUntil = nextRepath = 0f;
+        animator.SetBool("IsMoving", false);
+        animator.SetInteger("ActionState", 0);
+        string[] idle = { "Goblin_Idle_Down", "Goblin_Idle_Up", "Goblin_Idle_Right", "Goblin_Idle_Left" };
+        animator.Play(idle[Mathf.Clamp(animator.GetInteger("Direction"), 0, 3)], 0, 0f);
+        GoblinAudio sound = GetComponent<GoblinAudio>();
+        if (sound != null) sound.StopForStun();
+        return true;
+    }
+
+    private void EndStun()
+    {
+        if (!stunActive) return;
+        stunActive = false;
+        stunnedUntil = 0f;
+        if (rb != null)
+        {
+            rb.constraints = constraintsBeforeStun;
+            lastPosition = checkPosition = rb.position;
+        }
+        lastCheck = Time.time;
+        nextRepath = recoveryUntil = 0f;
+        nextAttackTime = Mathf.Max(nextAttackTime, Time.time + 0.2f);
+    }
+
+    public AwarenessState CurrentAwareness { get { return awareness; } }
+    public Vector2 PatrolHome { get { return homePosition; } }
+    public float SuspicionProgress
+    {
+        get { return Mathf.Clamp01(suspicion / Mathf.Max(0.1f, noticeSeconds)); }
+    }
+
+    public bool HasPermanentAlert
+    {
+        get
+        {
+            return individuallyAlerted ||
+                (coinCollector != null && (coinCollector.waveDirector != null
+                    ? coinCollector.waveDirector.IsWaveActive : coinCollector.collectedCoins >= 1));
+        }
+    }
+
+    public bool IsAlerted
+    {
+        get
+        {
+            if (HasPermanentAlert) return true;
+            if (enablePatrol) return awareness == AwarenessState.Chasing;
+            return !waitForFirstCoin && player != null && rb != null &&
+                Vector2.Distance(rb.position, player.position) <= detectionRadius;
+        }
+    }
+
+    public float CurrentMoveSpeed
+    {
+        get
+        {
+            if (enablePatrol && !IsAlerted) return patrolSpeed;
+            return increaseSpeedAfterSecondCoin && coinCollector != null &&
+                coinCollector.collectedCoins >= 2 ? secondCoinSpeed : moveSpeed;
+        }
+    }
+
+    // Permite alertar a un solo duende al incorporar las piedras.
+    public void Alert()
+    {
+        if (!isActiveAndEnabled ||
+            (playerHealth != null && playerHealth.currentHealth <= 0) ||
+            (coinCollector != null &&
+             coinCollector.IsLevelFinished))
+            return;
+
+        individuallyAlerted = true;
+        nextRepath = 0f;
+    }
 
     [RuntimeInitializeOnLoadMethod(
         RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -72,6 +227,8 @@ public class GoblinAI : MonoBehaviour
         body = GetComponent<BoxCollider2D>();
 
         lastPosition = checkPosition = rb.position;
+        homePosition = movementGoal = rb.position;
+        nextPatrolDecision = Time.time + Random.Range(0.2f, 0.8f);
 
         GameObject target =
             GameObject.FindGameObjectWithTag("Player");
@@ -116,42 +273,213 @@ public class GoblinAI : MonoBehaviour
 
     private void Update()
     {
+        if (Time.timeScale <= 0f) return;
         chasing = false;
-
-        if (player == null || isAttacking ||
-            (playerHealth != null && playerHealth.currentHealth <= 0))
+        navigationRequested = false;
+        if (stunActive && !IsStunned) EndStun();
+        if (IsStunned)
+        {
+            rb.velocity = Vector2.zero;
+            animator.SetBool("IsMoving", false);
             return;
-
-        Vector2 delta =
-            (Vector2)player.position - rb.position;
-
-        float distance = delta.magnitude;
-
-        bool detected =
-            distance <= detectionRadius ||
+        }
+        if (player == null ||
+            (playerHealth != null && playerHealth.currentHealth <= 0) ||
             (coinCollector != null &&
-             coinCollector.collectedCoins >= 1);
-
-        if (!detected)
+             coinCollector.IsLevelFinished))
             return;
 
+        if (enablePatrol)
+            UpdateAwareness(Mathf.Min(Time.deltaTime, 0.1f));
+        else
+            movementGoal = player.position;
+
+        if (isAttacking) return;
+
+        if (!IsAlerted)
+        {
+            navigationRequested = enablePatrol && HasMovementGoal() &&
+                Vector2.Distance(rb.position, movementGoal) > 0.16f;
+            return;
+        }
+
+        Vector2 delta = (Vector2)player.position - rb.position;
+        float distance = delta.magnitude;
         bool visible = CanSeePlayer();
 
-        if (distance <= attackRange &&
-            visible &&
-            Time.time >= nextAttackTime &&
-            playerHealth != null)
+        if (distance <= attackRange && visible &&
+            Time.time >= nextAttackTime && playerHealth != null)
         {
             Face(delta);
-
-            StartCoroutine(
-                AttackRoutine(nextAttackIsTwo ? 2 : 1));
-
+            StartCoroutine(enableLungeAttack
+                ? LungeRoutine(nextAttackIsTwo ? 2 : 1)
+                : AttackRoutine(nextAttackIsTwo ? 2 : 1));
             nextAttackIsTwo = !nextAttackIsTwo;
             return;
         }
 
         chasing = distance > stopDistance || !visible;
+        navigationRequested = chasing &&
+            Vector2.Distance(rb.position, movementGoal) > 0.12f;
+    }
+
+    private bool HasMovementGoal()
+    {
+        return awareness == AwarenessState.Returning ||
+            awareness == AwarenessState.Searching ||
+            (awareness == AwarenessState.Patrol && hasPatrolGoal);
+    }
+
+    private void UpdateAwareness(float deltaTime)
+    {
+        if (HasPermanentAlert)
+        {
+            ChangeAwareness(AwarenessState.Chasing);
+            RememberPlayer();
+            return;
+        }
+
+        float radius = awareness == AwarenessState.Chasing ||
+            awareness == AwarenessState.Searching
+                ? Mathf.Max(noticeRadius, trackingRadius) : noticeRadius;
+        bool visible = Vector2.Distance(rb.position, player.position) <= radius &&
+            CanSeePlayer();
+
+        switch (awareness)
+        {
+            case AwarenessState.Patrol:
+                if (visible)
+                {
+                    ChangeAwareness(AwarenessState.Suspicious);
+                    suspicion = Mathf.Max(0f, deltaTime);
+                    Face((Vector2)player.position - rb.position);
+                }
+                else UpdatePatrol();
+                break;
+
+            case AwarenessState.Suspicious:
+                if (!visible)
+                {
+                    suspicion = 0f;
+                    ChangeAwareness(AwarenessState.Patrol);
+                    break;
+                }
+                Face((Vector2)player.position - rb.position);
+                suspicion += Mathf.Max(0f, deltaTime);
+                if (suspicion >= Mathf.Max(0.1f, noticeSeconds))
+                {
+                    ChangeAwareness(AwarenessState.Chasing);
+                    RememberPlayer();
+                }
+                break;
+
+            case AwarenessState.Chasing:
+                if (visible) RememberPlayer();
+                else
+                {
+                    movementGoal = lastSeenPosition;
+                    if (Time.time - lastSeenAt >= loseSightSeconds)
+                        ChangeAwareness(AwarenessState.Searching);
+                }
+                break;
+
+            case AwarenessState.Searching:
+                if (visible)
+                {
+                    ChangeAwareness(AwarenessState.Chasing);
+                    RememberPlayer();
+                    break;
+                }
+                movementGoal = lastSeenPosition;
+                if (Vector2.Distance(rb.position, lastSeenPosition) <= 0.25f)
+                {
+                    if (investigationUntil < 0f)
+                        investigationUntil = Time.time + investigationSeconds;
+                    if (Time.time >= investigationUntil)
+                        ChangeAwareness(AwarenessState.Returning);
+                }
+                if (Time.time >= investigationDeadline)
+                    ChangeAwareness(AwarenessState.Returning);
+                break;
+
+            case AwarenessState.Returning:
+                movementGoal = homePosition;
+                if (visible)
+                {
+                    ChangeAwareness(AwarenessState.Suspicious);
+                    Face((Vector2)player.position - rb.position);
+                }
+                else if (Vector2.Distance(rb.position, homePosition) <= 0.2f)
+                    ChangeAwareness(AwarenessState.Patrol);
+                break;
+        }
+    }
+
+    private void RememberPlayer()
+    {
+        lastSeenPosition = player.position;
+        movementGoal = lastSeenPosition;
+        lastSeenAt = Time.time;
+    }
+
+    private void ChangeAwareness(AwarenessState next)
+    {
+        if (awareness == next) return;
+        awareness = next;
+        suspicion = 0f;
+        nextRepath = 0f;
+        recoveryUntil = 0f;
+        lastCheck = Time.time;
+        checkPosition = rb.position;
+        path.Clear();
+        waypoint = 0;
+        if (next == AwarenessState.Patrol)
+        {
+            hasPatrolGoal = false;
+            nextPatrolDecision = Time.time +
+                Random.Range(patrolPauseMin, Mathf.Max(patrolPauseMin, patrolPauseMax));
+        }
+        else if (next == AwarenessState.Searching)
+        {
+            investigationUntil = -1f;
+            investigationDeadline = Time.time + 6f;
+            movementGoal = lastSeenPosition;
+        }
+        else if (next == AwarenessState.Returning)
+            movementGoal = homePosition;
+    }
+
+    private void UpdatePatrol()
+    {
+        if (hasPatrolGoal)
+        {
+            if (Vector2.Distance(rb.position, movementGoal) <= 0.2f ||
+                Time.time >= patrolDeadline)
+            {
+                hasPatrolGoal = false;
+                nextPatrolDecision = Time.time +
+                    Random.Range(patrolPauseMin, Mathf.Max(patrolPauseMin, patrolPauseMax));
+            }
+            return;
+        }
+        if (Time.time < nextPatrolDecision || navigation == null) return;
+
+        Vector2 offset = (Vector2)body.bounds.center - rb.position;
+        for (int attempt = 0; attempt < 12; attempt++)
+        {
+            Vector2 candidate = homePosition + Random.insideUnitCircle * patrolRadius;
+            float distance = Vector2.Distance(rb.position, candidate);
+            if (distance < 0.55f ||
+                !navigation.Clear(body.bounds.center, candidate + offset))
+                continue;
+
+            movementGoal = candidate;
+            hasPatrolGoal = true;
+            nextRepath = 0f;
+            patrolDeadline = Time.time + distance / Mathf.Max(0.1f, patrolSpeed) + 3f;
+            return;
+        }
+        nextPatrolDecision = Time.time + 1f;
     }
 
     private bool CanSeePlayer()
@@ -159,6 +487,9 @@ public class GoblinAI : MonoBehaviour
         Vector2 target = playerBody != null
             ? (Vector2)playerBody.bounds.center
             : (Vector2)player.position;
+
+        if (navigation != null && navigation.includeStaticSceneColliders)
+            return navigation.HasLineOfSight(body.bounds.center, target);
 
         return Physics2D.Linecast(
             body.bounds.center,
@@ -168,6 +499,33 @@ public class GoblinAI : MonoBehaviour
 
     private void FixedUpdate()
     {
+        if (lunging)
+        {
+            if (IsStunned || (playerHealth != null && playerHealth.currentHealth <= 0))
+            {
+                rb.velocity = Vector2.zero;
+                return;
+            }
+            float dashStep = Mathf.Min(lungeDistance - lungeTravelled,
+                lungeDistance / Mathf.Max(0.05f, lungeSeconds) * Time.fixedDeltaTime);
+            Vector2 dashCenter = body.bounds.center;
+            if (dashStep > 0f && navigation != null &&
+                navigation.Clear(dashCenter, dashCenter + lungeDirection * dashStep))
+            {
+                rb.MovePosition(rb.position + lungeDirection * dashStep);
+                lungeTravelled += dashStep;
+            }
+            TryLungeHit();
+            return;
+        }
+        if (IsStunned)
+        {
+            rb.velocity = Vector2.zero;
+            lastPosition = checkPosition = rb.position;
+            lastCheck = Time.time;
+            animator.SetBool("IsMoving", false);
+            return;
+        }
         Vector2 travelled = rb.position - lastPosition;
         lastPosition = rb.position;
 
@@ -180,7 +538,7 @@ public class GoblinAI : MonoBehaviour
         if (moving)
             Face(travelled);
 
-        if (!chasing || isAttacking ||
+        if (!navigationRequested || isAttacking ||
             player == null || navigation == null)
         {
             rb.velocity = Vector2.zero;
@@ -191,11 +549,7 @@ public class GoblinAI : MonoBehaviour
 
         Vector2 center = body.bounds.center;
 
-        float speed =
-            coinCollector != null &&
-            coinCollector.collectedCoins >= 2
-                ? secondCoinSpeed
-                : moveSpeed;
+        float speed = CurrentMoveSpeed;
 
         // Comprobar si esta intentando moverse sin avanzar.
         if (Time.time - lastCheck >= stuckTime)
@@ -203,7 +557,7 @@ public class GoblinAI : MonoBehaviour
             if ((rb.position - checkPosition).sqrMagnitude < 0.0016f)
             {
                 Vector2 wanted =
-                    (Vector2)player.position - rb.position;
+                    movementGoal - rb.position;
 
                 float angle =
                     Random.value < 0.5f ? 90f : -90f;
@@ -251,7 +605,7 @@ public class GoblinAI : MonoBehaviour
             {
                 navigation.FindPath(
                     center,
-                    (Vector2)player.position + offset,
+                    movementGoal + offset,
                     path);
 
                 waypoint = 0;
@@ -329,6 +683,15 @@ public class GoblinAI : MonoBehaviour
             speed * Time.fixedDeltaTime,
             remaining);
 
+        if (enablePatrol && awareness == AwarenessState.Patrol &&
+            Vector2.Distance(rb.position + direction * step, homePosition) > patrolRadius + 0.03f)
+        {
+            hasPatrolGoal = false;
+            nextPatrolDecision = Time.time + patrolPauseMin;
+            rb.velocity = Vector2.zero;
+            return;
+        }
+
         Vector2 destination = center + direction * step;
 
         if (navigation.Clear(center, destination))
@@ -348,6 +711,49 @@ public class GoblinAI : MonoBehaviour
                 : (delta.y > 0f ? 1 : 0);
 
         animator.SetInteger("Direction", direction);
+    }
+
+    private IEnumerator LungeRoutine(int action)
+    {
+        isAttacking = true;
+        windingUp = true;
+        rb.velocity = Vector2.zero;
+        lungeDirection = ((Vector2)player.position - rb.position).normalized;
+        Face(lungeDirection);
+        animator.SetBool("IsMoving", false);
+        animator.SetInteger("ActionState", action);
+        nextAttackTime = Time.time + attackCooldown;
+        GoblinAudio sound = GetComponent<GoblinAudio>();
+        if (sound != null) sound.AttackVoice();
+        yield return new WaitForSeconds(windupSeconds);
+        windingUp = false;
+        lungeTravelled = 0f;
+        lungeHit = false;
+        lunging = true;
+        yield return new WaitForSeconds(lungeSeconds);
+        lunging = false;
+        TryLungeHit();
+        rb.velocity = Vector2.zero;
+        animator.SetInteger("ActionState", 0);
+        yield return new WaitForSeconds(recoverySeconds);
+        isAttacking = false;
+        nextRepath = recoveryUntil = 0f;
+        lastPosition = checkPosition = rb.position;
+        lastCheck = Time.time;
+    }
+
+    private void TryLungeHit()
+    {
+        if (lungeHit || player == null || playerHealth == null ||
+            playerHealth.currentHealth <= 0 || IsStunned) return;
+        Vector2 delta = (Vector2)player.position - rb.position;
+        if (delta.magnitude <= 0.8f &&
+            (delta.sqrMagnitude < 0.01f || Vector2.Dot(delta.normalized, lungeDirection) > 0.15f) &&
+            CanSeePlayer())
+        {
+            lungeHit = true;
+            playerHealth.TakeDamage(attackDamage);
+        }
     }
 
     private IEnumerator AttackRoutine(int action)
@@ -388,6 +794,8 @@ public class GoblinAI : MonoBehaviour
     private void OnDisable()
     {
         agents.Remove(this);
+        windingUp = lunging = false;
+        EndStun();
         StopAllCoroutines();
 
         isAttacking = false;

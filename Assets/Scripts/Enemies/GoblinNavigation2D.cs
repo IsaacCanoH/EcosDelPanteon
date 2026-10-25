@@ -11,6 +11,8 @@ public class GoblinNavigation2D : MonoBehaviour
     public float clearance = 0.02f;
     public LayerMask obstacleMask = 1 << 6;
     public bool showBlockedCells;
+    [Tooltip("Incluir los colliders estaticos de todas las capas, sin bloquear a los personajes.")]
+    public bool includeStaticSceneColliders;
 
     private int width, height;
     private Vector2 minimum, probeSize;
@@ -20,8 +22,8 @@ public class GoblinNavigation2D : MonoBehaviour
     private byte[] testedEdges, clearEdges;
     private ContactFilter2D filter;
 
-    private readonly Collider2D[] overlaps = new Collider2D[1];
-    private readonly RaycastHit2D[] hits = new RaycastHit2D[1];
+    private readonly Collider2D[] overlaps = new Collider2D[32];
+    private readonly RaycastHit2D[] hits = new RaycastHit2D[32];
     private readonly SortedSet<Entry> open = new SortedSet<Entry>();
 
     private static readonly int[] DX =
@@ -73,7 +75,7 @@ public class GoblinNavigation2D : MonoBehaviour
         probeSize = agentSize + Vector2.one * clearance * 2f;
 
         filter = new ContactFilter2D();
-        filter.SetLayerMask(obstacleMask);
+        filter.SetLayerMask(includeStaticSceneColliders ? ~0 : obstacleMask.value);
         filter.useTriggers = false;
 
         Physics2D.SyncTransforms();
@@ -89,29 +91,53 @@ public class GoblinNavigation2D : MonoBehaviour
 
         for (int i = 0; i < count; i++)
         {
-            walkable[i] = Physics2D.OverlapBox(
-                Point(i), probeSize, 0f, filter, overlaps) == 0;
+            int overlapCount = Physics2D.OverlapBox(
+                Point(i), probeSize, 0f, filter, overlaps);
+            walkable[i] = true;
+            for (int hit = 0; hit < overlapCount; hit++)
+            {
+                if (!IsObstacle(overlaps[hit])) continue;
+                walkable[i] = false;
+                break;
+            }
         }
     }
 
     public bool Clear(Vector2 from, Vector2 to)
     {
         Vector2 delta = to - from;
-
         if (delta.sqrMagnitude < 0.000001f)
         {
-            return Physics2D.OverlapBox(
-                from, probeSize, 0f, filter, overlaps) == 0;
+            int count = Physics2D.OverlapBox(
+                from, probeSize, 0f, filter, overlaps);
+            for (int i = 0; i < count; i++)
+                if (IsObstacle(overlaps[i])) return false;
+            return true;
         }
 
-        return Physics2D.BoxCast(
-            from,
-            probeSize,
-            0f,
-            delta.normalized,
-            filter,
-            hits,
-            delta.magnitude) == 0;
+        int hitsCount = Physics2D.BoxCast(
+            from, probeSize, 0f, delta.normalized, filter,
+            hits, delta.magnitude);
+        for (int i = 0; i < hitsCount; i++)
+            if (IsObstacle(hits[i].collider)) return false;
+        return true;
+    }
+
+    public bool HasLineOfSight(Vector2 from, Vector2 to)
+    {
+        if (walkable == null) Rebuild();
+        int count = Physics2D.Linecast(from, to, filter, hits);
+        for (int i = 0; i < count; i++)
+            if (IsObstacle(hits[i].collider)) return false;
+        return true;
+    }
+
+    private bool IsObstacle(Collider2D collider)
+    {
+        if (collider == null) return false;
+        if (!includeStaticSceneColliders) return true;
+        Rigidbody2D attachedBody = collider.attachedRigidbody;
+        return attachedBody == null || attachedBody.bodyType == RigidbodyType2D.Static;
     }
 
     private Vector2 Point(int index)

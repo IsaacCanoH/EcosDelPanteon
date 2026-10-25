@@ -128,19 +128,14 @@ public class GoblinAudio : MonoBehaviour
             return;
         }
 
-        bool rapido =
-            collector != null && collector.collectedCoins >= 2;
-
-        float velocidad = rapido ? ai.secondCoinSpeed : ai.moveSpeed;
+        float velocidad = ai.CurrentMoveSpeed;
+        bool rapido = velocidad > ai.moveSpeed + 0.01f;
 
         animator.SetFloat(
             "RunSpeed",
             velocidad / Mathf.Max(0.01f, ai.moveSpeed));
 
-        bool persigue =
-            Vector2.Distance(rb.position, player.position)
-                <= ai.detectionRadius ||
-            (collector != null && collector.collectedCoins >= 1);
+        bool persigue = ai.IsAlerted;
 
         int nuevoModo = persigue ? 1 : 0;
 
@@ -285,12 +280,12 @@ public class GoblinAudio : MonoBehaviour
 
     private bool PuedeSonar()
     {
-        return ai.isActiveAndEnabled &&
+        return ai.isActiveAndEnabled && !ai.IsStunned &&
                rb.simulated &&
                player != null &&
                (health == null || health.currentHealth > 0) &&
                (collector == null ||
-                collector.collectedCoins < collector.requiredCoins);
+                !collector.IsLevelFinished);
     }
 
     private IEnumerator DesvanecerVoz()
@@ -366,6 +361,13 @@ public class GoblinAudio : MonoBehaviour
 
         resultado.SetData(mono, 0);
         return resultado;
+    }
+
+    public void StopForStun()
+    {
+        Silenciar();
+        modoVoz = -1;
+        ultimoMovimiento = float.NegativeInfinity;
     }
 
     private void Silenciar()
