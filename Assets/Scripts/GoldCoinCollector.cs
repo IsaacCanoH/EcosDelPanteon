@@ -11,14 +11,28 @@ public class GoldCoinCollector : MonoBehaviour
     public AudioSource audioRecoleccion;
     public AudioClip sonidoRecoleccion;
 
+    public GoblinWaveDirector waveDirector;
+    public event Action<int> OnCoinCollected;
     public event Action OnAllCoinsCollected;
+
+    public bool CanCollectNextCoin
+    {
+        get { return collectedCoins < requiredCoins &&
+            (waveDirector == null || (!waveDirector.IsWaveActive && !waveDirector.IsComplete)); }
+    }
+    public bool IsLevelFinished
+    {
+        get { return collectedCoins >= requiredCoins &&
+            (waveDirector == null || waveDirector.IsComplete); }
+    }
 
     public void CollectCoin()
     {
-        if (collectedCoins >= requiredCoins)
+        if (!CanCollectNextCoin)
             return;
 
         collectedCoins++;
+        OnCoinCollected?.Invoke(collectedCoins);
 
         // Reproducir una vez por cada moneda recogida.
         if (audioRecoleccion != null &&
