@@ -99,6 +99,21 @@ public class PlayerLantern : MonoBehaviour
         if (!flashVisual.enabled) return;
         flashVisual.transform.position = new Vector3(flashOrigin.x, flashOrigin.y + 0.3f, transform.position.z);
         flashVisual.transform.rotation = Quaternion.Euler(0f, 0f, Mathf.Atan2(flashDirection.y, flashDirection.x) * Mathf.Rad2Deg);
+        if (flashVisual.sprite != null)
+        {
+            Transform visual = flashVisual.transform;
+            Vector3 horizontal = visual.localRotation * Vector3.right;
+            Vector3 vertical = visual.localRotation * Vector3.up;
+            if (visual.parent != null)
+            {
+                horizontal = visual.parent.TransformVector(horizontal);
+                vertical = visual.parent.TransformVector(vertical);
+            }
+            // El borde del destello coincide con el alcance real, incluso si cambia la escala del padre.
+            float size = range / Mathf.Max(0.01f, flashVisual.sprite.bounds.max.x);
+            visual.localScale = new Vector3(size / Mathf.Max(0.01f, horizontal.magnitude),
+                size / Mathf.Max(0.01f, vertical.magnitude), 1f);
+        }
         flashVisual.color = new Color(1f, 1f, 1f, Mathf.Clamp01((flashUntil - Time.time) / 0.2f));
     }
 
@@ -109,7 +124,9 @@ public class PlayerLantern : MonoBehaviour
         animaVisual.enabled = remaining > 0f && health != null && health.currentHealth > 0;
         if (!animaVisual.enabled) return;
         float t = Mathf.Clamp01(1f - remaining / 0.45f);
-        Vector2 position = flashOrigin + flashDirection * Mathf.Lerp(0.15f, 0.9f, t);
+        // Llega al borde antes del ultimo tramo de desvanecimiento.
+        float travel = Mathf.Clamp01(t * 1.5f);
+        Vector2 position = flashOrigin + flashDirection * Mathf.Lerp(0.15f, range, travel);
         position.y += 0.32f + Mathf.Sin(t * Mathf.PI) * 0.08f;
         animaVisual.transform.position = new Vector3(position.x, position.y, transform.position.z);
         animaVisual.transform.rotation = Quaternion.Euler(0f, 0f, Mathf.Sin(t * Mathf.PI * 2f) * 3f);
