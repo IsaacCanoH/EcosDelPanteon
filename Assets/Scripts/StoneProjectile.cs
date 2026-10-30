@@ -51,18 +51,25 @@ public class StoneProjectile : MonoBehaviour
         GoblinAI target = null;
         float nearestDistance = float.PositiveInfinity;
         bool nearestStatic = false;
+
         for (int i = 0; i < count; i++)
         {
             Collider2D candidate = hits[i].collider;
             if (candidate == null || candidate.isTrigger ||
                 (owner != null && candidate.transform.IsChildOf(owner.transform)))
                 continue;
+
             GoblinAI goblin = candidate.GetComponentInParent<GoblinAI>();
+            EnemyHealth eh = candidate.GetComponentInParent<EnemyHealth>();
             Rigidbody2D attached = candidate.attachedRigidbody;
             bool solid = attached == null || attached.bodyType == RigidbodyType2D.Static;
-            if (!solid && (goblin == null || !goblin.isActiveAndEnabled)) continue;
+
+            bool isEnemy = (goblin != null && goblin.isActiveAndEnabled) ||
+                           (eh != null && !eh.IsDead && eh.isActiveAndEnabled);
+
+            if (!solid && !isEnemy) continue;
+
             float hitDistance = hits[i].distance;
-            // Un muro gana un empate de contacto con un enemigo.
             if (hitDistance < nearestDistance - 0.0001f ||
                 (Mathf.Abs(hitDistance - nearestDistance) <= 0.0001f && solid && !nearestStatic))
             {
@@ -72,30 +79,46 @@ public class StoneProjectile : MonoBehaviour
                 nearestStatic = solid;
             }
         }
-        // El margen extra solo admite duendes; no ensancha los choques con paredes.
+
+        // El margen extra admite enemigos; no ensancha los choques con paredes.
         count = Physics2D.CircleCast(origin, Mathf.Max(radius, enemyHitRadius),
             direction, filter, hits, distance);
         for (int i = 0; i < count; i++)
         {
             Collider2D candidate = hits[i].collider;
             if (candidate == null || candidate.isTrigger) continue;
+
             GoblinAI goblin = candidate.GetComponentInParent<GoblinAI>();
-            if (goblin == null || !goblin.isActiveAndEnabled ||
-                hits[i].distance >= nearestDistance - 0.0001f ||
+            EnemyHealth eh = candidate.GetComponentInParent<EnemyHealth>();
+
+            bool isEnemy = (goblin != null && goblin.isActiveAndEnabled) ||
+                           (eh != null && !eh.IsDead && eh.isActiveAndEnabled);
+
+            if (!isEnemy || hits[i].distance >= nearestDistance - 0.0001f ||
                 !HasClearApproach(origin, candidate, goblin))
                 continue;
+
             nearest = candidate;
             target = goblin;
             nearestDistance = hits[i].distance;
             nearestStatic = false;
         }
+
         float advance = nearest != null ? Mathf.Min(distance, nearestDistance) : distance;
         transform.position += (Vector3)(direction * advance);
         travelled += advance;
         if (visual != null) visual.Rotate(0f, 0f, -600f * advance / Mathf.Max(0.1f, speed));
+
         if (nearest != null)
         {
             if (target != null) target.Stun(stunSeconds);
+
+            var enemyHealth = nearest.GetComponentInParent<EnemyHealth>();
+            if (enemyHealth != null)
+            {
+                enemyHealth.TakeDamage(10, direction);
+            }
+
             if (owner != null) owner.PlayImpact(transform.position);
             Finish();
         }
@@ -110,7 +133,7 @@ public class StoneProjectile : MonoBehaviour
         {
             Collider2D candidate = visibilityHits[i].collider;
             if (candidate == null || candidate.isTrigger ||
-                candidate.GetComponentInParent<GoblinAI>() == target ||
+                (target != null && candidate.GetComponentInParent<GoblinAI>() == target) ||
                 (owner != null && candidate.transform.IsChildOf(owner.transform)))
                 continue;
             Rigidbody2D attached = candidate.attachedRigidbody;

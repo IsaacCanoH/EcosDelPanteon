@@ -29,10 +29,16 @@ public class GoblinCombat : MonoBehaviour
 
     public bool TakeLanternHit()
     {
-        if (IsBanished || !isActiveAndEnabled || !ai.isActiveAndEnabled) return false;
-        CurrentHealth = Mathf.Max(0, CurrentHealth - 1);
+        return TakeDamage(10);
+    }
+
+    public bool TakeDamage(int damage, Vector2 knockbackDir = default)
+    {
+        if (IsBanished || !isActiveAndEnabled || (ai != null && !ai.isActiveAndEnabled)) return false;
+        int hits = damage >= 25 ? 3 : (damage >= 15 ? 2 : 1);
+        CurrentHealth = Mathf.Max(0, CurrentHealth - hits);
         flashUntil = Time.time + 0.14f;
-        ai.Alert();
+        if (ai != null) ai.Alert();
         if (CurrentHealth == 0) Banish();
         return true;
     }
@@ -59,6 +65,7 @@ public class GoblinCombat : MonoBehaviour
         animator.SetBool("IsMoving", false);
         animator.SetInteger("ActionState", 3);
         animator.Play("Goblin_Death", 0, 0f);
+
         if (director != null) director.NotifyBanished(this);
         StartCoroutine(FadeAway());
     }

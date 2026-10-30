@@ -1,0 +1,14 @@
+Referencia de luz: ambiente 0.55.
+Tinte de props de referencia: RGBA(0.612, 0.667, 0.784, 1.000); hierba: RGBA(1.000, 1.000, 1.000, 1.000).
+OK: terreno conservado en 44 x 26 celdas; entrada oeste y capas ordenadas correctamente.
+OK: cripta y distribución anterior retiradas; arboleda, plaza circular, pozo y panteones asimétricos creados.
+OK: jugador y salida en el acceso oeste; juguetes reubicados conservando sus identificadores y mecánicas.
+OK: ambiente y lámpara iguales al nivel 1; luces adicionales desactivadas.
+OK: ruta accesible hacia (-17.00, 7.60) (51 puntos).
+OK: ruta accesible hacia (17.50, -7.10) (152 puntos).
+OK: ruta accesible hacia (17.00, 7.60) (150 puntos).
+OK: ruta accesible hacia (4.00, 3.00) (98 puntos).
+OK: ruta accesible hacia (14.00, 7.00) (138 puntos).
+OK: ruta accesible hacia (-20.15, -4.70) (2 puntos).
+OK: tamaño original del nivel 2 y referencias de escena comprobados.
+OK: nivel 1, prefabs originales, scripts compartidos, fuente y materiales de referencia sin cambios.

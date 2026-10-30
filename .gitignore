@@ -1,4 +1,5 @@
 # Unity .gitignore
+/Backups/
 # Basado en https://github.com/github/gitignore/blob/main/Unity.gitignore
 
 # Carpetas generadas por Unity, incluso dentro de subcarpetas

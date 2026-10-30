@@ -1,0 +1,19 @@
+OK: Escena sin scripts faltantes
+OK: Jugador con vida y recolección de juguetes
+OK: Jugador con PlayerWeaponController configurado
+OK: Jugador con PlayerStoneThrow (6 piedras)
+OK: Tres juguetes distintos
+OK: Tres zonas de encuentro (altares)
+OK: Encuentro 3 con prefab de Jefe Niño Espectral
+OK: Canvas_HUD presente en la escena
+OK: PlayerDeathScreenUI configurado
+OK: ToySearchUI [E] configurado
+OK: Level2ClueSystem configurado
+OK: Jerarquía de layouts conservada
+OK: 32 sprites recortados del PNG original
+OK: Pivotes anclados a los pies
+OK: Perímetro de 44 celdas de ancho y barda norte en y=12
+OK: Bardas incluidas en Obstacles
+OK: Terreno de 44 x 26 celdas conservado
+OK: Salida configurada en la puerta oeste
+OK: Sólo ambiente nocturno y lámpara del jugador activos

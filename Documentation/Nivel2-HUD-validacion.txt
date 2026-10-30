@@ -1,0 +1,16 @@
+Comprobaciones ejecutadas en Unity sobre una copia de la escena:
+
+OK: Contadores iniciales de vida y juguetes.
+OK: Pergamino con el asset original del nivel 1.
+OK: Fuente pixelada original en todos los textos.
+OK: Cinco corazones originales llenos.
+OK: Tres iconos de juguetes en la distribución del nivel 1.
+OK: Mensaje introductorio completo dentro del pergamino.
+OK: Vida actualizada y quinto corazón vacío al recibir daño.
+OK: Contador y título del pergamino actualizados al recoger un juguete.
+OK: Aviso de lanzamiento cabe en el pergamino.
+OK: Mensaje y contador de los tres juguetes completos.
+OK: Piedras a 10 unidades/s y cadencia de cuatro segundos.
+OK: Velocidad física de la piedra aplicada al lanzamiento.
+OK: Las piedras rápidas siguen chocando con obstáculos.
+OK: Mensaje de derrota completo dentro del pergamino.

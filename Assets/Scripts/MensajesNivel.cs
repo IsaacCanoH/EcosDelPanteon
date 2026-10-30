@@ -29,9 +29,11 @@ public class MensajesNivel : MonoBehaviour
 
     private void Start()
     {
+        if (recolector == null)
+            recolector = FindObjectOfType<GoldCoinCollector>();
+
         if (recolector == null || carta == null || titulo == null || mensaje == null)
         {
-            Debug.LogError("MensajesNivel: asigna Recolector, Carta, Titulo y Mensaje.", this);
             enabled = false;
             return;
         }
@@ -74,8 +76,8 @@ public class MensajesNivel : MonoBehaviour
         {
             yield return Presentar("CUIDADO",
                 duendesTranquilosAlInicio
-                    ? "Evita que te vean.\n¡Puedes despistarlos!"
-                    : "Aléjate de los duendes.\n¡Puedes enfurecerlos!", segundosAviso);
+                    ? "Evita que te vean.\nÂ¡Puedes despistarlos!"
+                    : "AlÃ©jate de los duendes.\nÂ¡Puedes enfurecerlos!", segundosAviso);
         }
 
         rutina = null;
@@ -85,13 +87,13 @@ public class MensajesNivel : MonoBehaviour
     {
         string texto;
         if (cantidad >= recolector.requiredCoins)
-            texto = "¡Recuperaste todo el oro!";
+            texto = "Â¡Recuperaste todo el oro!";
         else if (cantidad == 1)
-            texto = "Los duendes te han visto.\n¡Corre!";
+            texto = "Los duendes te han visto.\nÂ¡Corre!";
         else
             texto = duendesTranquilosAlInicio
-                ? "Ya tienes dos monedas.\nEncuentra la última."
-                : "¡Estás bajo la maldición!\nBusca la última moneda.";
+                ? "Ya tienes dos monedas.\nEncuentra la Ãºltima."
+                : "Â¡EstÃ¡s bajo la maldiciÃ³n!\nBusca la Ãºltima moneda.";
 
         if (rutina != null) StopCoroutine(rutina);
         rutina = StartCoroutine(AvisoDeMoneda(
