@@ -10,7 +10,7 @@ using UnityEngine.UI;
 [DefaultExecutionOrder(-120)]
 public class LevelOneEnding : MonoBehaviour
 {
-    public enum EndingState { Playing, VictoryMessage, WalkingOut, FadingOut, Finished, Defeat }
+    public enum EndingState { Playing, VictoryMessage, WalkingOut, FadingOut, Finished, Defeat, Paused }
     public GoblinWaveDirector director;
     public PlayerHealth health;
     public CoinSearchUI clues;
@@ -24,6 +24,7 @@ public class LevelOneEnding : MonoBehaviour
     public CanvasGroup resultPanel;
     public CanvasGroup resultBackdrop;
     public CanvasGroup blackout;
+    public VictoryCelebration victoryCelebration;
     public TMP_Text resultTitle;
     public TMP_Text resultText;
     public TMP_Text resultHint;
@@ -51,6 +52,12 @@ public class LevelOneEnding : MonoBehaviour
     private bool loading;
     private bool ownsPause;
     private float musicVolume;
+    private float pausedTimeScale;
+    private bool pausedAudio;
+    private bool pausedMovement;
+    private GameObject previousSelection;
+    private TMP_Text retryLabel;
+    private IrisInNivel closingIris;
 
     private void Awake()
     {
@@ -61,9 +68,13 @@ public class LevelOneEnding : MonoBehaviour
         animator = health.GetComponent<Animator>();
         playerVisual = health.GetComponent<SpriteRenderer>();
         musicVolume = music != null ? music.volume : 0f;
+        retryLabel = retryButton.GetComponentInChildren<TMP_Text>(true);
         HideGroup(resultPanel);
         HideGroup(resultBackdrop);
         HideGroup(blackout);
+        closingIris = blackout.GetComponent<IrisInNivel>();
+        if (closingIris != null) closingIris.enabled = false;
+        if (victoryCelebration != null) victoryCelebration.Hide();
         buttonRow.SetActive(false);
     }
 
@@ -83,6 +94,14 @@ public class LevelOneEnding : MonoBehaviour
 
     private void Update()
     {
+        if (GameControls.PausePressed && !loading)
+        {
+            if (State == EndingState.Paused) Resume();
+            else if (State == EndingState.Playing && health.currentHealth > 0 &&
+                !director.IsComplete &&
+                (clues == null || clues.opening == null || !clues.opening.isActiveAndEnabled))
+                OpenPauseMenu();
+        }
         if (State != EndingState.Playing || loading) return;
         if (health.currentHealth <= 0)
         {
@@ -97,6 +116,55 @@ public class LevelOneEnding : MonoBehaviour
             LockGameplay();
             StartCoroutine(VictorySequence());
         }
+    }
+
+    public void OpenPauseMenu()
+    {
+        if (State != EndingState.Playing || loading || health.currentHealth <= 0 ||
+            director.IsComplete) return;
+        if (search != null) search.InterruptSearch();
+        pausedMovement = movement != null && movement.enabled;
+        if (pausedMovement) movement.enabled = false;
+        body.velocity = Vector2.zero;
+        animator.SetBool("IsMoving", false);
+        pausedTimeScale = Time.timeScale;
+        pausedAudio = AudioListener.pause;
+        previousSelection = EventSystem.current != null
+            ? EventSystem.current.currentSelectedGameObject : null;
+        if (clues != null) clues.SetMenuCovered(true);
+        State = EndingState.Paused;
+        resultTitle.text = "PAUSA";
+        resultText.text = "El juego está en pausa.\n" +
+            "<link=\"key:ESC\"><color=#00000000> ESC </color></link> para continuar.";
+        resultHint.gameObject.SetActive(false);
+        retryLabel.text = "CONTINUAR";
+        buttonRow.SetActive(true);
+        resultPanel.alpha = 1f;
+        resultPanel.interactable = true;
+        resultPanel.blocksRaycasts = true;
+        resultBackdrop.alpha = 1f;
+        resultBackdrop.blocksRaycasts = true;
+        PauseResult();
+        if (EventSystem.current != null)
+            EventSystem.current.SetSelectedGameObject(retryButton.gameObject);
+    }
+
+    public void Resume()
+    {
+        if (State != EndingState.Paused) return;
+        HideGroup(resultPanel);
+        HideGroup(resultBackdrop);
+        buttonRow.SetActive(false);
+        State = EndingState.Playing;
+        ownsPause = false;
+        Time.timeScale = pausedTimeScale;
+        AudioListener.pause = pausedAudio;
+        if (pausedMovement && movement != null) movement.enabled = true;
+        pausedMovement = false;
+        if (clues != null) clues.SetMenuCovered(false);
+        if (EventSystem.current != null)
+            EventSystem.current.SetSelectedGameObject(previousSelection);
+        previousSelection = null;
     }
 
     private void LockGameplay()
@@ -117,6 +185,9 @@ public class LevelOneEnding : MonoBehaviour
 
     private void ShowResult(bool victory, bool buttons)
     {
+        resultBackdrop.transform.SetAsLastSibling();
+        resultPanel.transform.SetAsLastSibling();
+        retryLabel.text = "REINTENTAR";
         resultTitle.text = victory ? "VICTORIA" : "DERROTA";
         resultText.text = victory
             ? "Recuperaste las tres monedas.\nEl panteón vuelve a estar en calma."
@@ -136,6 +207,7 @@ public class LevelOneEnding : MonoBehaviour
     private IEnumerator VictorySequence()
     {
         ShowResult(true, false);
+        if (victoryCelebration != null) victoryCelebration.Show();
         yield return new WaitForSecondsRealtime(victoryMessageSeconds);
         yield return FadeResultsOut();
         if (!PrepareExitRoute())
@@ -264,21 +336,38 @@ public class LevelOneEnding : MonoBehaviour
     private IEnumerator FadeToBlack()
     {
         State = EndingState.FadingOut;
+        blackout.transform.SetAsLastSibling();
         blackout.blocksRaycasts = true;
-        float elapsed = 0f;
-        while (elapsed < fadeSeconds)
+        if (closingIris != null)
         {
-            elapsed += Time.unscaledDeltaTime;
-            float progress = Mathf.Clamp01(elapsed / fadeSeconds);
-            blackout.alpha = progress;
-            if (music != null) music.volume = musicVolume * (1f - progress);
-            yield return null;
+            closingIris.duracion = fadeSeconds;
+            blackout.alpha = 1f;
+            closingIris.enabled = true;
+            while (!closingIris.IsComplete)
+            {
+                if (music != null) music.volume = musicVolume * (1f - closingIris.Progress);
+                yield return null;
+            }
+        }
+        else
+        {
+            float elapsed = 0f;
+            while (elapsed < fadeSeconds)
+            {
+                elapsed += Time.unscaledDeltaTime;
+                float progress = Mathf.Clamp01(elapsed / fadeSeconds);
+                blackout.alpha = progress;
+                if (music != null) music.volume = musicVolume * (1f - progress);
+                yield return null;
+            }
         }
         blackout.alpha = 1f;
+        if (music != null) music.volume = 0f;
     }
 
     private void CompleteExit()
     {
+        if (victoryCelebration != null) victoryCelebration.Hide();
         ExitFinished = true;
         State = EndingState.Finished;
         if (Application.isEditor)
@@ -305,6 +394,7 @@ public class LevelOneEnding : MonoBehaviour
 
     public void Retry()
     {
+        if (State == EndingState.Paused) { Resume(); return; }
         if (loading || (State != EndingState.Defeat && State != EndingState.Finished)) return;
         loading = true;
         RestoreClock();
@@ -313,7 +403,10 @@ public class LevelOneEnding : MonoBehaviour
 
     public void ReturnToMenu()
     {
-        if (loading || (State != EndingState.Defeat && State != EndingState.Finished)) return;
+        if (loading || (State != EndingState.Defeat && State != EndingState.Finished &&
+            State != EndingState.Paused)) return;
+        if (State == EndingState.Paused) Resume();
+        if (clues != null) clues.CloseClue();
         loading = true;
         RestoreClock();
         SceneManager.LoadScene(menuScene);
@@ -321,17 +414,25 @@ public class LevelOneEnding : MonoBehaviour
 
     public void QuitGame()
     {
-        if (State != EndingState.Defeat && State != EndingState.Finished) return;
+        if (State != EndingState.Defeat && State != EndingState.Finished &&
+            State != EndingState.Paused) return;
         if (Application.isEditor) ReturnToMenu();
         else Application.Quit();
     }
 
     private void OnDisable()
     {
+        if (victoryCelebration != null) victoryCelebration.Hide();
         retryButton.onClick.RemoveListener(Retry);
         menuButton.onClick.RemoveListener(ReturnToMenu);
         quitButton.onClick.RemoveListener(QuitGame);
         walking = false;
+        if (State == EndingState.Paused)
+        {
+            Resume();
+            if (clues != null) clues.CloseClue();
+            RestoreClock();
+        }
         if (ownsPause) RestoreClock();
     }
 }

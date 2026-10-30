@@ -10,6 +10,7 @@ public static class GameControls
     private static InputAction throwStone;
     private static InputAction clue;
     private static InputAction lantern;
+    private static InputAction pause;
     private static bool reportedMissing;
 
     public static Vector2 Move
@@ -32,6 +33,11 @@ public static class GameControls
     public static bool LanternPressed
     {
         get { return Ready() && lantern.WasPressedThisFrame(); }
+    }
+
+    public static bool PausePressed
+    {
+        get { return Ready() && pause.WasPressedThisFrame(); }
     }
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
@@ -62,6 +68,7 @@ public static class GameControls
         throwStone = runtimeActions.FindAction("Player/Throw", true);
         clue = runtimeActions.FindAction("Player/Clue", true);
         lantern = runtimeActions.FindAction("Player/Lantern", true);
+        pause = runtimeActions.FindAction("Player/Pause", true);
         runtimeActions.Enable();
         Application.quitting += Shutdown;
     }
@@ -82,6 +89,6 @@ public static class GameControls
             Object.Destroy(runtimeActions);
         }
         runtimeActions = null;
-        move = search = throwStone = clue = lantern = null;
+        move = search = throwStone = clue = lantern = pause = null;
     }
 }

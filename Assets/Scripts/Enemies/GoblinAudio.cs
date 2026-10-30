@@ -46,6 +46,43 @@ public class GoblinAudio : MonoBehaviour
     private bool pausado;
     private bool desvaneciendo;
     private Coroutine transicionVoz;
+    private static GoblinAudio vozActiva;
+    private static float siguienteTurnoVoz;
+    private static float siguientePasoGrupo;
+    private float finTurnoVoz;
+    private float siguienteVozPropia;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ReiniciarTurnos()
+    {
+        vozActiva = null;
+        siguienteTurnoVoz = 0f;
+        siguientePasoGrupo = 0f;
+    }
+
+    private bool ReservarVoz(AudioSource fuente, float duracion)
+    {
+        if (Time.time < siguienteVozPropia || player == null || fuente == null ||
+            Vector2.Distance(transform.position, player.position) >= fuente.maxDistance)
+            return false;
+        if (vozActiva != this &&
+            ((vozActiva != null && Time.time < vozActiva.finTurnoVoz) ||
+             Time.time < siguienteTurnoVoz))
+            return false;
+        vozActiva = this;
+        finTurnoVoz = Time.time + duracion + 0.05f;
+        siguienteVozPropia = Time.time + Mathf.Max(4f, duracion + 0.6f);
+        siguienteTurnoVoz = finTurnoVoz + 0.25f;
+        return true;
+    }
+
+    private void LiberarVoz()
+    {
+        if (vozActiva != this) return;
+        vozActiva = null;
+        siguienteTurnoVoz = Time.time + 0.25f;
+        finTurnoVoz = 0f;
+    }
 
     private void Awake()
     {
@@ -128,6 +165,10 @@ public class GoblinAudio : MonoBehaviour
             return;
         }
 
+        if (vozActiva == this && Time.time >= finTurnoVoz &&
+            !voz.isPlaying && (ataques == null || !ataques.isPlaying))
+            LiberarVoz();
+
         float velocidad = ai.CurrentMoveSpeed;
         bool rapido = velocidad > ai.moveSpeed + 0.01f;
 
@@ -177,9 +218,15 @@ public class GoblinAudio : MonoBehaviour
         if (clip == null)
             return;
 
+        float tono = Random.Range(0.97f, 1.03f);
+        if (!ReservarVoz(voz, clip.length / tono))
+        {
+            siguienteVoz = Time.time + Random.Range(0.35f, 0.85f);
+            return;
+        }
         voz.clip = clip;
         voz.volume = volumenVoz;
-        voz.pitch = Random.Range(0.97f, 1.03f);
+        voz.pitch = tono;
         voz.Play();
 
         float silencio = persigue
@@ -199,6 +246,7 @@ public class GoblinAudio : MonoBehaviour
             !PuedeSonar() ||
             !EstaCorriendo() ||
             Time.time - ultimoPaso < 0.1f ||
+            Time.time < siguientePasoGrupo ||
             golpes == null ||
             golpes.Length == 0)
             return;
@@ -213,6 +261,7 @@ public class GoblinAudio : MonoBehaviour
 
         ultimoGolpe = indice;
         ultimoPaso = Time.time;
+        siguientePasoGrupo = Time.time + 0.075f;
 
         pasos.pitch = Random.Range(0.97f, 1.03f);
         pasos.PlayOneShot(golpes[indice]);
@@ -247,11 +296,13 @@ public class GoblinAudio : MonoBehaviour
         if (clip == null)
             return;
 
+        float tono = Random.Range(0.97f, 1.03f);
+        if (!ReservarVoz(ataques, clip.length / tono)) return;
         ultimoAtaqueAudio = Time.time;
         ultimoSonidoAtaque = indice;
 
         ataques.Stop();
-        ataques.pitch = Random.Range(0.97f, 1.03f);
+        ataques.pitch = tono;
         ataques.PlayOneShot(clip);
 
         siguienteVoz = Mathf.Max(
@@ -303,6 +354,7 @@ public class GoblinAudio : MonoBehaviour
 
         voz.Stop();
         voz.volume = volumenVoz;
+        if (ataques == null || !ataques.isPlaying) LiberarVoz();
         desvaneciendo = false;
         transicionVoz = null;
     }
@@ -372,6 +424,7 @@ public class GoblinAudio : MonoBehaviour
 
     private void Silenciar()
     {
+        LiberarVoz();
         if (transicionVoz != null)
             StopCoroutine(transicionVoz);
 
