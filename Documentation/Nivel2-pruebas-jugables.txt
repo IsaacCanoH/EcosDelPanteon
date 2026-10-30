@@ -1,0 +1,19 @@
+OK: Sprite del jugador activo en modo de juego
+OK: Sin juguetes: sigue a distancia y no inflige daño
+OK: El acecho mantiene separación
+OK: Cada juguete sólo se cuenta una vez
+OK: Primer juguete: golpe cuerpo a cuerpo con daño
+OK: Dos juguetes: lanza piedras desde distancia media
+OK: Las piedras pueden dañar al jugador
+OK: Tres juguetes: permanece activo y lanza a distancia larga
+OK: Todos los lanzamientos están separados por al menos 4 segundos, incluido el cambio de fase
+OK: Las piedras chocan contra obstáculos y no dañan a través de ellos
+CONTACTO Tree 01: distancia=-0.005001545, jugadorY=5.845001, obstaculoY=6.17
+OK: Colisión física impide atravesar Tree 01
+OK: Detrás de Tree 01: jugador dibujado al fondo
+OK: Frente a Tree 01: jugador dibujado delante
+CONTACTO Stone Bench 01 S: distancia=-0.005000114, jugadorY=0.9657586, obstaculoY=1.32235
+OK: Colisión física impide atravesar Stone Bench 01 S
+OK: Detrás de Stone Bench 01 S: jugador dibujado al fondo
+OK: Frente a Stone Bench 01 S: jugador dibujado delante
+OK: El niño no desaparece al recuperar el tercer juguete

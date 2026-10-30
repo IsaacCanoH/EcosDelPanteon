@@ -1,0 +1,4 @@
+Archivos originales comprobados contra HEAD: 42.
+Prefabs independientes del nivel 2: 78.
+El mapa del nivel 2 se rediseñó. Sus referencias siguen aisladas; los prefabs de HUD, jugador, juguetes y enemigo conservan su contenido.
+OK: restauración del nivel 1 y aislamiento del nivel 2 verificados.

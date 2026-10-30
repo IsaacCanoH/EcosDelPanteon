@@ -2,7 +2,7 @@ using Cainos.PixelArtTopDown_Basic;
 using UnityEngine;
 
 [DefaultExecutionOrder(50)]
-[RequireComponent(typeof(PlayerHealth), typeof(GoldCoinCollector))]
+[RequireComponent(typeof(PlayerHealth))]
 public class PlayerStoneThrow : MonoBehaviour
 {
     [Min(1)] public int startingStones = 6;
@@ -20,6 +20,7 @@ public class PlayerStoneThrow : MonoBehaviour
     private GoldCoinCollector collector;
     private PlayerCoinSearch search;
     private TopDownCharacterController movement;
+    private Level2CharacterController level2Movement;
     private Animator animator;
     private Collider2D body;
     private float nextThrowAt;
@@ -31,30 +32,45 @@ public class PlayerStoneThrow : MonoBehaviour
     public float CooldownRemaining { get { return Mathf.Max(0f, nextThrowAt - Time.time); } }
     public bool CanProjectilesContinue
     {
-        get { return isActiveAndEnabled && health != null && health.currentHealth > 0 &&
-            collector != null && !collector.IsLevelFinished; }
+        get
+        {
+            return isActiveAndEnabled && health != null && health.currentHealth > 0 &&
+                (collector == null || !collector.IsLevelFinished);
+        }
     }
 
     private void Awake()
     {
+        enabled = true;
         health = GetComponent<PlayerHealth>();
         collector = GetComponent<GoldCoinCollector>();
         search = GetComponent<PlayerCoinSearch>();
         movement = GetComponent<TopDownCharacterController>();
+        level2Movement = GetComponent<Level2CharacterController>();
         animator = GetComponent<Animator>();
         body = GetComponent<Collider2D>();
         RemainingStones = startingStones;
         hasThrowAnimation = animator != null && animator.HasState(0,
             Animator.StringToHash("Base Layer.Player_Throw_Down"));
+
+        if (projectilePrefab == null)
+        {
+#if UNITY_EDITOR
+            projectilePrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<StoneProjectile>("Assets/Prefabs/Gameplay/Piedra_Proyectil.prefab");
+#endif
+        }
     }
 
     private void Update()
     {
         if (hasThrowAnimation && animator.GetBool(Throwing) &&
             (Time.time >= throwAnimationUntil || !CanProjectilesContinue ||
-             (movement != null && !movement.enabled)))
+             (movement != null && !movement.enabled) ||
+             (level2Movement != null && !level2Movement.enabled)))
             animator.SetBool(Throwing, false);
-        if (GameControls.ThrowPressed) TryThrow();
+
+        if (GameControls.ThrowPressed || Input.GetKeyDown(KeyCode.Space))
+            TryThrow();
     }
 
     public Vector2 FacingDirection
@@ -74,11 +90,13 @@ public class PlayerStoneThrow : MonoBehaviour
 
     public bool TryThrow()
     {
+        bool movementBlocked = (movement != null && !movement.enabled) ||
+                               (level2Movement != null && !level2Movement.enabled);
+
         if (!CanProjectilesContinue || Time.timeScale <= 0f ||
             RemainingStones <= 0 || Time.time < nextThrowAt ||
             projectilePrefab == null || (opening != null && opening.isActiveAndEnabled) ||
-            (search != null && search.IsSearching) ||
-            (movement != null && !movement.enabled))
+            (search != null && search.IsSearching) || movementBlocked)
             return false;
 
         Vector2 origin = body != null ? (Vector2)body.bounds.center : (Vector2)transform.position;
@@ -99,6 +117,7 @@ public class PlayerStoneThrow : MonoBehaviour
         nextThrowAt = Time.time + Mathf.Max(0.1f, throwCooldown);
         return true;
     }
+
     public void PlayImpact(Vector2 position)
     {
         if (!CanProjectilesContinue || Time.timeScale <= 0f ||
