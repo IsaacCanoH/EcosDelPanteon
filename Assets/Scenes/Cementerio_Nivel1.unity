@@ -36583,7 +36583,7 @@ MonoBehaviour:
   - {fileID: 8590497404022953668, guid: 721c51e9a530eb84e962effe9ab7e4cd, type: 3}
   - {fileID: -95711113342441556, guid: 721c51e9a530eb84e962effe9ab7e4cd, type: 3}
   navigation: {fileID: 884606394}
-  range: 1.35
+  range: 2
   angle: 110
   cooldown: 1
 --- !u!210 &1922381636
