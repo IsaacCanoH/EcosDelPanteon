@@ -177,12 +177,29 @@ MonoBehaviour:
   secondCoinSpeed: 2
   detectionRadius: 4
   stopDistance: 0.8
+  waitForFirstCoin: 0
+  increaseSpeedAfterSecondCoin: 1
+  enablePatrol: 0
+  patrolRadius: 2
+  patrolSpeed: 0.65
+  patrolPauseMin: 0.8
+  patrolPauseMax: 1.8
+  noticeRadius: 3
+  trackingRadius: 6
+  noticeSeconds: 0.7
+  loseSightSeconds: 3
+  investigationSeconds: 1.5
   obstacleMask:
     serializedVersion: 2
     m_Bits: 64
   attackRange: 1
   attackCooldown: 1.5
   attackDamage: 1
+  enableLungeAttack: 0
+  windupSeconds: 0.4
+  lungeDistance: 0.85
+  lungeSeconds: 0.18
+  recoverySeconds: 0.65
   repathInterval: 0.6
   separationDistance: 0.5
   separationStrength: 0.35
@@ -397,7 +414,7 @@ AudioSource:
   OutputAudioMixerGroup: {fileID: 0}
   m_audioClip: {fileID: 0}
   m_PlayOnAwake: 0
-  m_Volume: 0.45
+  m_Volume: 0.5
   m_Pitch: 1
   Loop: 0
   Mute: 0
@@ -525,7 +542,7 @@ AudioSource:
   OutputAudioMixerGroup: {fileID: 0}
   m_audioClip: {fileID: 0}
   m_PlayOnAwake: 0
-  m_Volume: 0.45
+  m_Volume: 0.5
   m_Pitch: 1
   Loop: 0
   Mute: 0

@@ -15,6 +15,11 @@ public class IrisInNivel : MaskableGraphic
     [Min(0f)] public float esperaInicial = 0.15f;
     [Min(0f)] public float bordeSuave = 4f;
 
+    // La apertura existente conserva su comportamiento; el cierre usa la misma mascara al reves.
+    public bool closing;
+    public bool IsComplete { get { return avance >= 1f; } }
+    public float Progress { get { return avance; } }
+
     private float tiempo;
     private float avance;
     private Vector2 centro;
@@ -35,7 +40,7 @@ public class IrisInNivel : MaskableGraphic
 
     private void LateUpdate()
     {
-        if (!Application.isPlaying) return;
+        if (!Application.isPlaying || IsComplete) return;
 
         if (camaraJuego == null)
             camaraJuego = Camera.main;
@@ -61,7 +66,7 @@ public class IrisInNivel : MaskableGraphic
 
         SetVerticesDirty();
 
-        if (avance >= 1f)
+        if (avance >= 1f && !closing)
             gameObject.SetActive(false);
     }
 
@@ -75,7 +80,8 @@ public class IrisInNivel : MaskableGraphic
 
         if (r.width <= 0f || r.height <= 0f) return;
 
-        if (avance <= 0f)
+        float apertura = closing ? 1f - avance : avance;
+        if (apertura <= 0f)
         {
             vh.AddVert(new Vector2(r.xMin, r.yMin),
                 Color.black, Vector2.zero);
@@ -106,7 +112,7 @@ public class IrisInNivel : MaskableGraphic
             (distanciaMaxima + suavidad) * 1.02f + 4f;
 
         float radio = (distanciaMaxima + suavidad * 2f)
-            * Mathf.SmoothStep(0f, 1f, avance);
+            * Mathf.SmoothStep(0f, 1f, apertura);
 
         float interior = Mathf.Clamp(
             radio - suavidad, 0f, exterior);

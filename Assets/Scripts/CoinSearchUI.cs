@@ -32,6 +32,7 @@ public class CoinSearchUI : MonoBehaviour
     private bool searching;
     private bool clueOpen;
     private bool ownsPause;
+    private bool menuCovered;
     private float previousTimeScale;
     private bool previousAudioPause;
     private TopDownCharacterController movement;
@@ -79,6 +80,7 @@ public class CoinSearchUI : MonoBehaviour
 
     private void Update()
     {
+        if (menuCovered) return;
         if (clueOpen)
         {
             if (!CanRead()) CloseClue();
@@ -94,6 +96,7 @@ public class CoinSearchUI : MonoBehaviour
 
     public void ToggleClue()
     {
+        if (menuCovered) return;
         if (clueOpen && showingObjective) ShowCurrentClue();
         else if (clueOpen) CloseClue();
         else ShowCurrentClue();
@@ -101,7 +104,7 @@ public class CoinSearchUI : MonoBehaviour
 
     public void ShowCurrentClue()
     {
-        if ((!clueOpen && !ReadyToOpen()) || !CanRead() ||
+        if (menuCovered || (!clueOpen && !ReadyToOpen()) || !CanRead() ||
             clueCard == null || clueBackdrop == null ||
             clueTitle == null || clueText == null || coins == null)
             return;
@@ -115,7 +118,7 @@ public class CoinSearchUI : MonoBehaviour
             clueText.text = "Recupera las 3 monedas.\n" +
                 "Cada una despierta una oleada.\n" +
                 "Expúlsalos y revela otra pista.\n" +
-                "<mark=#C8A05266><color=#493419> F </color></mark> Farol: 3 golpes por duende.";
+                "<link=\"key:F\"><color=#00000000> F </color></link> Farol: 3 golpes por duende.";
         }
         else if (WaveActive)
         {
@@ -153,6 +156,18 @@ public class CoinSearchUI : MonoBehaviour
         }
         SetClueVisibility(true);
         if (searchPanel != null) searchPanel.alpha = 0f;
+    }
+
+    // Oculta la pista mientras el menu esta encima, conservando su pausa y progreso.
+    public void SetMenuCovered(bool covered)
+    {
+        menuCovered = covered;
+        SetClueVisibility(clueOpen && !covered);
+        if (covered)
+        {
+            if (searchPanel != null) searchPanel.alpha = 0f;
+            if (clueHint != null) clueHint.enabled = false;
+        }
     }
 
     public void CloseClue()
@@ -195,6 +210,7 @@ public class CoinSearchUI : MonoBehaviour
 
     private void LateUpdate()
     {
+        if (menuCovered) return;
         if (clueOpen && !CanRead()) CloseClue();
         if (!clueOpen && ReadyToOpen() && !WaveActive && ClueStage != lastClueStage)
             ShowCurrentClue();
