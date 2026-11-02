@@ -8,8 +8,9 @@ public class ParchmentMessageUI : MonoBehaviour
 {
     public static ParchmentMessageUI Instance { get; private set; }
 
-    [Header("Referencias Visuales")]
+    [Header("Referencias Visuales (Tarjeta_Pista Nivel 1)")]
     public CanvasGroup cardCanvasGroup;
+    public CanvasGroup backdropCanvasGroup;
     public Image cardBackground;
     public Image itemIcon;
     public TMP_Text titleText;
@@ -17,6 +18,7 @@ public class ParchmentMessageUI : MonoBehaviour
     public TMP_Text pauseNoticeText;
     public TMP_Text continueHintText;
     public Image backdropDimmer;
+    public GameObject topRightClueAccess;
 
     [Header("Sprites y Fuentes")]
     public Sprite parchmentSprite;
@@ -24,6 +26,9 @@ public class ParchmentMessageUI : MonoBehaviour
 
     private bool isOpen = false;
     public bool IsOpen => isOpen;
+    private int lastStateChangeFrame = -1;
+    public bool ChangedThisFrame => lastStateChangeFrame == Time.frameCount;
+
     private Action onClosedCallback;
     private float previousTimeScale = 1f;
     private Coroutine fadeRoutine;
@@ -44,12 +49,12 @@ public class ParchmentMessageUI : MonoBehaviour
 
     private void Update()
     {
-        if (!isOpen) return;
+        if (!isOpen || ChangedThisFrame) return;
 
-        // Cerrar al presionar P, Espacio, Enter, Escape o Clic Izquierdo
-        if (Input.GetKeyDown(KeyCode.P) || Input.GetKeyDown(KeyCode.Space) ||
-            Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.Escape) ||
-            Input.GetMouseButtonDown(0))
+        // Cerrar al presionar P, Espacio, Enter o Escape
+        if (GameControls.CluePressed || Input.GetKeyDown(KeyCode.P) ||
+            Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return) ||
+            Input.GetKeyDown(KeyCode.Escape))
         {
             Close();
         }
@@ -57,7 +62,7 @@ public class ParchmentMessageUI : MonoBehaviour
 
     public void Show(string title, string message, Sprite icon = null, Action onClosed = null, bool pauseGame = true)
     {
-        if (cardCanvasGroup == null)
+        if (cardCanvasGroup == null || titleText == null || bodyText == null)
         {
             SetupProceduralUIIfMissing();
         }
@@ -71,9 +76,15 @@ public class ParchmentMessageUI : MonoBehaviour
 
         onClosedCallback = onClosed;
         isOpen = true;
+        lastStateChangeFrame = Time.frameCount;
 
         if (titleText != null) titleText.text = title != null ? title.ToUpper() : "";
-        if (bodyText != null) bodyText.text = message ?? "";
+        if (bodyText != null)
+        {
+            bodyText.text = message ?? "";
+            var inlinePrompt = bodyText.GetComponent<InlineKeyPromptUI>();
+            if (inlinePrompt != null) inlinePrompt.enabled = true;
+        }
 
         if (itemIcon != null)
         {
@@ -81,20 +92,43 @@ public class ParchmentMessageUI : MonoBehaviour
             if (icon != null) itemIcon.sprite = icon;
         }
 
+        if (topRightClueAccess != null)
+        {
+            topRightClueAccess.SetActive(false);
+        }
+
         if (pauseGame)
         {
             if (Time.timeScale > 0f) previousTimeScale = Time.timeScale;
             Time.timeScale = 0f;
-            if (pauseNoticeText != null) pauseNoticeText.gameObject.SetActive(true);
+            if (pauseNoticeText != null)
+            {
+                pauseNoticeText.text = "JUEGO EN PAUSA";
+                pauseNoticeText.gameObject.SetActive(true);
+            }
         }
         else
         {
             if (pauseNoticeText != null) pauseNoticeText.gameObject.SetActive(false);
-            // Mensajes informativos breves: auto-desvanecer en 5.5s
-            autoDismissRoutine = StartCoroutine(AutoDismissRoutine(5.5f));
+            autoDismissRoutine = StartCoroutine(AutoDismissRoutine(6.5f));
         }
 
-        fadeRoutine = StartCoroutine(FadeRoutine(cardCanvasGroup.alpha, 1f, 0.18f, true));
+        if (backdropCanvasGroup != null)
+        {
+            backdropCanvasGroup.alpha = pauseGame ? 1f : 0f;
+            backdropCanvasGroup.blocksRaycasts = pauseGame;
+        }
+        if (backdropDimmer != null)
+        {
+            backdropDimmer.color = pauseGame ? new Color(0.02f, 0.03f, 0.05f, 0.56f) : new Color(0f, 0f, 0f, 0f);
+        }
+
+        if (cardCanvasGroup != null)
+        {
+            cardCanvasGroup.alpha = 1f;
+            cardCanvasGroup.interactable = true;
+            cardCanvasGroup.blocksRaycasts = pauseGame;
+        }
     }
 
     private IEnumerator AutoDismissRoutine(float delay)
@@ -110,6 +144,7 @@ public class ParchmentMessageUI : MonoBehaviour
     {
         if (!isOpen) return;
         isOpen = false;
+        lastStateChangeFrame = Time.frameCount;
 
         if (autoDismissRoutine != null)
         {
@@ -117,34 +152,34 @@ public class ParchmentMessageUI : MonoBehaviour
             autoDismissRoutine = null;
         }
 
-        Time.timeScale = 1f;
-
-        if (fadeRoutine != null) StopCoroutine(fadeRoutine);
-        fadeRoutine = StartCoroutine(FadeRoutine(cardCanvasGroup != null ? cardCanvasGroup.alpha : 1f, 0f, 0.15f, false, () =>
+        if (Time.timeScale == 0f)
         {
-            Action cb = onClosedCallback;
-            onClosedCallback = null;
-            cb?.Invoke();
-        }));
-    }
-
-    private IEnumerator FadeRoutine(float from, float to, float duration, bool enableInteraction, Action onComplete = null)
-    {
-        if (cardCanvasGroup == null) yield break;
-
-        float t = 0f;
-        while (t < duration)
-        {
-            t += Time.unscaledDeltaTime;
-            float alpha = Mathf.Lerp(from, to, t / duration);
-            cardCanvasGroup.alpha = alpha;
-            yield return null;
+            Time.timeScale = previousTimeScale > 0f ? previousTimeScale : 1f;
         }
 
-        cardCanvasGroup.alpha = to;
-        cardCanvasGroup.interactable = enableInteraction;
-        cardCanvasGroup.blocksRaycasts = enableInteraction;
-        onComplete?.Invoke();
+        if (cardCanvasGroup != null)
+        {
+            cardCanvasGroup.alpha = 0f;
+            cardCanvasGroup.interactable = false;
+            cardCanvasGroup.blocksRaycasts = false;
+        }
+        if (backdropCanvasGroup != null)
+        {
+            backdropCanvasGroup.alpha = 0f;
+            backdropCanvasGroup.blocksRaycasts = false;
+        }
+        if (backdropDimmer != null)
+        {
+            backdropDimmer.color = new Color(0f, 0f, 0f, 0f);
+        }
+        if (topRightClueAccess != null)
+        {
+            topRightClueAccess.SetActive(true);
+        }
+
+        Action cb = onClosedCallback;
+        onClosedCallback = null;
+        cb?.Invoke();
     }
 
     private void HideImmediate()
@@ -155,9 +190,18 @@ public class ParchmentMessageUI : MonoBehaviour
             cardCanvasGroup.interactable = false;
             cardCanvasGroup.blocksRaycasts = false;
         }
+        if (backdropCanvasGroup != null)
+        {
+            backdropCanvasGroup.alpha = 0f;
+            backdropCanvasGroup.blocksRaycasts = false;
+        }
         if (backdropDimmer != null)
         {
             backdropDimmer.color = new Color(0f, 0f, 0f, 0f);
+        }
+        if (topRightClueAccess != null)
+        {
+            topRightClueAccess.SetActive(true);
         }
     }
 
@@ -170,19 +214,63 @@ public class ParchmentMessageUI : MonoBehaviour
             pixelFont = UnityEditor.AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/Fonts/PressStart2P-Regular SDF.asset");
 #endif
 
-        // Intentar emparentar a Canvas_HUD para heredar la escala de resolución exacta del Nivel 1
-        Canvas canvas = GetComponentInParent<Canvas>();
-        if (canvas == null)
+        // 1. Vincular directamente a la Tarjeta_Pista original de Canvas_HUD/BusquedaMonedas (idéntica al Nivel 1)
+        GameObject hudObj = GameObject.Find("Canvas_HUD");
+        if (hudObj != null)
         {
-            GameObject hudObj = GameObject.Find("Canvas_HUD");
-            if (hudObj != null)
+            Transform busqueda = hudObj.transform.Find("BusquedaMonedas");
+            if (busqueda != null)
             {
-                transform.SetParent(hudObj.transform, false);
-                canvas = hudObj.GetComponent<Canvas>();
+                busqueda.gameObject.SetActive(true);
+                var coinSearchUI = busqueda.GetComponent<CoinSearchUI>();
+                if (coinSearchUI != null) coinSearchUI.enabled = false;
+
+                Transform indicadorBusqueda = busqueda.Find("Indicador_Busqueda");
+                if (indicadorBusqueda != null) indicadorBusqueda.gameObject.SetActive(false);
+
+                Transform accesoPista = busqueda.Find("Acceso_Pista_P");
+                if (accesoPista != null)
+                {
+                    topRightClueAccess = accesoPista.gameObject;
+                    topRightClueAccess.SetActive(true);
+                    var hintText = accesoPista.Find("Texto_Acceso_Pista")?.GetComponent<TMP_Text>();
+                    if (hintText != null) hintText.enabled = true;
+                }
+
+                Transform fondoPausa = busqueda.Find("Fondo_Pausa_Pista");
+                if (fondoPausa != null)
+                {
+                    fondoPausa.gameObject.SetActive(true);
+                    backdropCanvasGroup = fondoPausa.GetComponent<CanvasGroup>();
+                    backdropDimmer = fondoPausa.GetComponent<Image>();
+                }
+
+                Transform tarjetaPista = busqueda.Find("Tarjeta_Pista");
+                if (tarjetaPista != null)
+                {
+                    tarjetaPista.gameObject.SetActive(true);
+                    cardCanvasGroup = tarjetaPista.GetComponent<CanvasGroup>();
+                    cardBackground = tarjetaPista.GetComponent<Image>();
+                    titleText = tarjetaPista.Find("Titulo_Pista")?.GetComponent<TMP_Text>();
+                    bodyText = tarjetaPista.Find("Texto_Pista")?.GetComponent<TMP_Text>();
+                    pauseNoticeText = tarjetaPista.Find("Estado_Pausa")?.GetComponent<TMP_Text>();
+                    continueHintText = tarjetaPista.Find("Ayuda_Pista")?.GetComponent<TMP_Text>();
+
+                    if (cardCanvasGroup != null && titleText != null && bodyText != null)
+                    {
+                        return;
+                    }
+                }
             }
         }
 
-        // Si no hay Canvas_HUD, crear uno con CanvasScaler escalado a 1920x1080 (igual que Nivel 1)
+        // 2. Fallback por si la escena no tuviera BusquedaMonedas: usar exactamente las medidas y diseño de Tarjeta_Pista del Nivel 1
+        Canvas canvas = GetComponentInParent<Canvas>();
+        if (canvas == null && hudObj != null)
+        {
+            transform.SetParent(hudObj.transform, false);
+            canvas = hudObj.GetComponent<Canvas>();
+        }
         if (canvas == null)
         {
             GameObject canvasObj = new GameObject("ParchmentMessageCanvas");
@@ -197,7 +285,6 @@ public class ParchmentMessageUI : MonoBehaviour
             transform.SetParent(canvasObj.transform, false);
         }
 
-        // Si ya teníamos hijos generados previamente, limpiarlos para aplicar el nuevo tamaño
         for (int i = transform.childCount - 1; i >= 0; i--)
         {
             Transform ch = transform.GetChild(i);
@@ -205,115 +292,73 @@ public class ParchmentMessageUI : MonoBehaviour
             else DestroyImmediate(ch.gameObject);
         }
 
-        // 1. Dimmer sutil (no opaca ni oscurece el juego por completo)
-        GameObject dimObj = new GameObject("BackdropDimmer");
+        GameObject dimObj = new GameObject("Fondo_Pausa_Pista");
         dimObj.transform.SetParent(transform, false);
         RectTransform dimRt = dimObj.AddComponent<RectTransform>();
         dimRt.anchorMin = Vector2.zero;
         dimRt.anchorMax = Vector2.one;
         dimRt.sizeDelta = Vector2.zero;
         backdropDimmer = dimObj.AddComponent<Image>();
-        backdropDimmer.color = new Color(0f, 0f, 0f, 0f);
-        backdropDimmer.raycastTarget = false;
+        backdropDimmer.color = new Color(0.02f, 0.03f, 0.05f, 0.56f);
+        backdropCanvasGroup = dimObj.AddComponent<CanvasGroup>();
+        backdropCanvasGroup.alpha = 0f;
 
-        // 2. Tarjeta de Pergamino (Tamaño visible, amplio y cómodo para leer)
-        GameObject cardObj = new GameObject("ParchmentCard");
+        GameObject cardObj = new GameObject("Tarjeta_Pista");
         cardObj.transform.SetParent(transform, false);
         RectTransform cardRt = cardObj.AddComponent<RectTransform>();
-        cardRt.anchorMin = new Vector2(0.5f, 1f);
-        cardRt.anchorMax = new Vector2(0.5f, 1f);
-        cardRt.pivot = new Vector2(0.5f, 1f);
-        cardRt.anchoredPosition = new Vector2(0f, -16f);
-        cardRt.sizeDelta = new Vector2(740f, 175f);
+        cardRt.anchorMin = new Vector2(0.5f, 0.5f);
+        cardRt.anchorMax = new Vector2(0.5f, 0.5f);
+        cardRt.pivot = new Vector2(0.5f, 0.5f);
+        cardRt.anchoredPosition = new Vector2(0f, 10f);
+        cardRt.sizeDelta = new Vector2(620f, 252f);
 
         cardCanvasGroup = cardObj.AddComponent<CanvasGroup>();
         cardBackground = cardObj.AddComponent<Image>();
         if (parchmentSprite != null) cardBackground.sprite = parchmentSprite;
         cardBackground.color = Color.white;
-        cardBackground.raycastTarget = false;
 
-        // 3. Icono opcional (sello o arma)
-        GameObject iconObj = new GameObject("ItemIcon");
-        iconObj.transform.SetParent(cardObj.transform, false);
-        RectTransform iconRt = iconObj.AddComponent<RectTransform>();
-        iconRt.anchorMin = new Vector2(0f, 0.5f);
-        iconRt.anchorMax = new Vector2(0f, 0.5f);
-        iconRt.pivot = new Vector2(0.5f, 0.5f);
-        iconRt.anchoredPosition = new Vector2(46f, 0f);
-        iconRt.sizeDelta = new Vector2(48f, 48f);
-        itemIcon = iconObj.AddComponent<Image>();
-        itemIcon.preserveAspect = true;
-        itemIcon.raycastTarget = false;
-        itemIcon.gameObject.SetActive(false);
-
-        // 4. Título (Tipografía pixel nítida y legible)
-        GameObject titleObj = new GameObject("CardTitle");
+        GameObject titleObj = new GameObject("Titulo_Pista");
         titleObj.transform.SetParent(cardObj.transform, false);
         RectTransform titleRt = titleObj.AddComponent<RectTransform>();
         titleRt.anchorMin = new Vector2(0f, 1f);
         titleRt.anchorMax = new Vector2(1f, 1f);
         titleRt.pivot = new Vector2(0.5f, 1f);
-        titleRt.anchoredPosition = new Vector2(20f, -16f);
-        titleRt.sizeDelta = new Vector2(-70f, 30f);
+        titleRt.anchoredPosition = new Vector2(18f, -24f);
+        titleRt.sizeDelta = new Vector2(-196f, 28f);
         titleText = titleObj.AddComponent<TextMeshProUGUI>();
         if (pixelFont != null) titleText.font = pixelFont;
-        titleText.text = "OBJETIVO";
-        titleText.alignment = TextAlignmentOptions.Center;
-        titleText.fontSize = 17f;
-        titleText.fontStyle = FontStyles.Bold;
-        titleText.color = new Color(0.29f, 0.22f, 0.16f, 1f); // #4a3828 sepia oscuro
-        titleText.raycastTarget = false;
+        titleText.alignment = TextAlignmentOptions.Left;
+        titleText.fontSize = 14f;
+        titleText.color = new Color(0.545f, 0.369f, 0.2f, 1f);
 
-        // 5. Mensaje / Cuerpo (Tamaño de lectura cómodo y nítido)
-        GameObject bodyObj = new GameObject("CardBody");
+        GameObject bodyObj = new GameObject("Texto_Pista");
         bodyObj.transform.SetParent(cardObj.transform, false);
         RectTransform bodyRt = bodyObj.AddComponent<RectTransform>();
         bodyRt.anchorMin = new Vector2(0f, 0f);
         bodyRt.anchorMax = new Vector2(1f, 1f);
         bodyRt.pivot = new Vector2(0.5f, 0.5f);
-        bodyRt.anchoredPosition = new Vector2(20f, -8f);
-        bodyRt.sizeDelta = new Vector2(-70f, -64f);
+        bodyRt.anchoredPosition = new Vector2(18f, 8f);
+        bodyRt.sizeDelta = new Vector2(-196f, -126f);
         bodyText = bodyObj.AddComponent<TextMeshProUGUI>();
         if (pixelFont != null) bodyText.font = pixelFont;
-        bodyText.fontSize = 13.5f;
-        bodyText.alignment = TextAlignmentOptions.Center;
-        bodyText.color = new Color(0.18f, 0.14f, 0.11f, 1f); // #2e241c sepia texto
+        bodyText.alignment = TextAlignmentOptions.TopLeft;
+        bodyText.fontSize = 12f;
         bodyText.lineSpacing = 12f;
+        bodyText.color = new Color(0.286f, 0.204f, 0.098f, 1f);
         bodyText.enableWordWrapping = true;
-        bodyText.raycastTarget = false;
 
-        // 6. Pie: [P / ESPACIO] CONTINUAR (Discreto en esquina inferior derecha)
-        GameObject hintObj = new GameObject("ContinueHint");
-        hintObj.transform.SetParent(cardObj.transform, false);
-        RectTransform hintRt = hintObj.AddComponent<RectTransform>();
-        hintRt.anchorMin = new Vector2(1f, 0f);
-        hintRt.anchorMax = new Vector2(1f, 0f);
-        hintRt.pivot = new Vector2(1f, 0f);
-        hintRt.anchoredPosition = new Vector2(-22f, 10f);
-        hintRt.sizeDelta = new Vector2(240f, 20f);
-        continueHintText = hintObj.AddComponent<TextMeshProUGUI>();
-        if (pixelFont != null) continueHintText.font = pixelFont;
-        continueHintText.text = "[P / ESPACIO] CONTINUAR";
-        continueHintText.alignment = TextAlignmentOptions.BottomRight;
-        continueHintText.fontSize = 11f;
-        continueHintText.color = new Color(0.42f, 0.32f, 0.24f, 0.85f);
-        continueHintText.raycastTarget = false;
-
-        // 7. Aviso de pausa opcional
-        GameObject pauseObj = new GameObject("PauseNotice");
+        GameObject pauseObj = new GameObject("Estado_Pausa");
         pauseObj.transform.SetParent(cardObj.transform, false);
         RectTransform pauseRt = pauseObj.AddComponent<RectTransform>();
         pauseRt.anchorMin = new Vector2(0f, 0f);
         pauseRt.anchorMax = new Vector2(0f, 0f);
         pauseRt.pivot = new Vector2(0f, 0f);
-        pauseRt.anchoredPosition = new Vector2(40f, 9f);
-        pauseRt.sizeDelta = new Vector2(120f, 18f);
+        pauseRt.anchoredPosition = new Vector2(116f, 21f);
+        pauseRt.sizeDelta = new Vector2(210f, 22f);
         pauseNoticeText = pauseObj.AddComponent<TextMeshProUGUI>();
         if (pixelFont != null) pauseNoticeText.font = pixelFont;
-        pauseNoticeText.text = "PAUSA";
-        pauseNoticeText.fontSize = 9.5f;
-        pauseNoticeText.color = new Color(0.55f, 0.45f, 0.36f, 0.85f);
-        pauseNoticeText.raycastTarget = false;
-        pauseNoticeText.gameObject.SetActive(false);
+        pauseNoticeText.text = "JUEGO EN PAUSA";
+        pauseNoticeText.fontSize = 9f;
+        pauseNoticeText.color = new Color(0.545f, 0.369f, 0.2f, 1f);
     }
 }

@@ -35,7 +35,7 @@ public class PlayerStoneThrow : MonoBehaviour
         get
         {
             return isActiveAndEnabled && health != null && health.currentHealth > 0 &&
-                (collector == null || !collector.IsLevelFinished);
+                (collector == null || !collector.isActiveAndEnabled || !collector.IsLevelFinished);
         }
     }
 
@@ -63,13 +63,15 @@ public class PlayerStoneThrow : MonoBehaviour
 
     private void Update()
     {
+        bool canMove = (movement != null && movement.enabled) ||
+                       (level2Movement != null && level2Movement.enabled) ||
+                       (movement == null && level2Movement == null);
+
         if (hasThrowAnimation && animator.GetBool(Throwing) &&
-            (Time.time >= throwAnimationUntil || !CanProjectilesContinue ||
-             (movement != null && !movement.enabled) ||
-             (level2Movement != null && !level2Movement.enabled)))
+            (Time.time >= throwAnimationUntil || !CanProjectilesContinue || !canMove))
             animator.SetBool(Throwing, false);
 
-        if (GameControls.ThrowPressed || Input.GetKeyDown(KeyCode.Space))
+        if (GameControls.ThrowPressed)
             TryThrow();
     }
 
@@ -90,13 +92,15 @@ public class PlayerStoneThrow : MonoBehaviour
 
     public bool TryThrow()
     {
-        bool movementBlocked = (movement != null && !movement.enabled) ||
-                               (level2Movement != null && !level2Movement.enabled);
+        bool canMove = (movement != null && movement.enabled) ||
+                       (level2Movement != null && level2Movement.enabled) ||
+                       (movement == null && level2Movement == null);
+        bool movementBlocked = !canMove;
 
         if (!CanProjectilesContinue || Time.timeScale <= 0f ||
             RemainingStones <= 0 || Time.time < nextThrowAt ||
             projectilePrefab == null || (opening != null && opening.isActiveAndEnabled) ||
-            (search != null && search.IsSearching) || movementBlocked)
+            (search != null && search.isActiveAndEnabled && search.IsSearching) || movementBlocked)
             return false;
 
         Vector2 origin = body != null ? (Vector2)body.bounds.center : (Vector2)transform.position;

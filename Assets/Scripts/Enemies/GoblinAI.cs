@@ -60,6 +60,7 @@ public class GoblinAI : MonoBehaviour
         attackCooldown = Mathf.Max(1.15f, 1.65f - (wave - 1) * 0.2f);
         nextAttackTime = Mathf.Max(nextAttackTime, Time.time + Random.Range(0.15f, 0.55f));
         Alert();
+        ChangeAwareness(AwarenessState.Chasing);
     }
 
     [Header("Navegacion")]
@@ -70,6 +71,8 @@ public class GoblinAI : MonoBehaviour
 
     private static readonly List<GoblinAI> agents =
         new List<GoblinAI>();
+
+    public static IReadOnlyList<GoblinAI> ActiveAgents => agents;
 
     private readonly List<Vector2> path = new List<Vector2>();
 
@@ -162,7 +165,15 @@ public class GoblinAI : MonoBehaviour
         nextAttackTime = Mathf.Max(nextAttackTime, Time.time + 0.2f);
     }
 
-    public AwarenessState CurrentAwareness { get { return awareness; } }
+    public AwarenessState CurrentAwareness
+    {
+        get
+        {
+            if (!enablePatrol || HasPermanentAlert || individuallyAlerted)
+                return AwarenessState.Chasing;
+            return awareness;
+        }
+    }
     public Vector2 PatrolHome { get { return homePosition; } }
     public float SuspicionProgress
     {
@@ -210,6 +221,7 @@ public class GoblinAI : MonoBehaviour
             return;
 
         individuallyAlerted = true;
+        ChangeAwareness(AwarenessState.Chasing);
         nextRepath = 0f;
     }
 

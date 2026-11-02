@@ -54,7 +54,7 @@ public class EnemyHealth : MonoBehaviour, IDamageable
 
         if (goblinAI != null)
         {
-            goblinAI.attackDamage = variant == EnemyVariant.ChubbyGoblin ? 20 : 10;
+            goblinAI.attackDamage = variant == EnemyVariant.ChubbyGoblin ? 40 : 20;
         }
     }
 
@@ -69,18 +69,18 @@ public class EnemyHealth : MonoBehaviour, IDamageable
                 dropsHealthOrbOnDeath = false;
                 if (goblinAI != null)
                 {
-                    goblinAI.attackDamage = 10;
-                    goblinAI.moveSpeed = 1.4f;
+                    goblinAI.attackDamage = 20;
+                    goblinAI.moveSpeed = 1.35f;
                 }
                 break;
 
             case EnemyVariant.ChubbyGoblin:
                 maxHealth = 80;
                 knockbackForce = 1.1f; // Más pesado y resistente al empuje
-                dropsHealthOrbOnDeath = false; // Probabilidad reducida gestionada en Die() (no 100%)
+                dropsHealthOrbOnDeath = true; // Los duendes grandes sueltan orbe de vida en niveles 2, 3 y 4
                 if (goblinAI != null)
                 {
-                    goblinAI.attackDamage = 20;
+                    goblinAI.attackDamage = 40;
                     goblinAI.moveSpeed = 0.95f;
                 }
                 break;
@@ -149,23 +149,25 @@ public class EnemyHealth : MonoBehaviour, IDamageable
         }
     }
 
+    private static bool IsLevel1Scene()
+    {
+        string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        return sceneName.IndexOf("Nivel1", StringComparison.OrdinalIgnoreCase) >= 0 ||
+               sceneName.IndexOf("Level1", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
     private void Die()
     {
         if (IsDead) return;
         IsDead = true;
 
-        // Exclusión estricta de Nivel 1: solo del Nivel 2 en adelante se permiten orbes de vida
-        string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
-        bool isLevel1 = sceneName.IndexOf("Nivel1", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                        FindObjectOfType<GoldCoinCollector>() != null;
-
-        if (!isLevel1)
+        // Exclusión estricta de Nivel 1: en Nivel 2, 3 y 4 los duendes grandes sueltan orbes de vida rojos
+        if (!IsLevel1Scene())
         {
-            // Drop reducido en Nivel 2: solo los duendes gorditos tienen probabilidad baja (15%), duendes normales 0%
-            bool dropsOrb = dropsHealthOrbOnDeath || (variant == EnemyVariant.ChubbyGoblin && UnityEngine.Random.value < 0.15f);
+            bool dropsOrb = dropsHealthOrbOnDeath || variant == EnemyVariant.ChubbyGoblin;
             if (dropsOrb)
             {
-                SpawnOneHeartOrb(transform.position);
+                SpawnOneHeartOrb(transform.position, healthOrbPrefab);
             }
         }
 
@@ -204,10 +206,8 @@ public class EnemyHealth : MonoBehaviour, IDamageable
 
     public static GameObject SpawnOneHeartOrb(Vector3 position, GameObject customPrefab = null)
     {
-        // En Nivel 1 nunca dropea orbes de vida
-        string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
-        if (sceneName.IndexOf("Nivel1", StringComparison.OrdinalIgnoreCase) >= 0 ||
-            FindObjectOfType<GoldCoinCollector>() != null)
+        // En Nivel 1 nunca dropea orbes de vida; habilitado en Niveles 2, 3 y 4
+        if (IsLevel1Scene())
         {
             return null;
         }
@@ -219,6 +219,7 @@ public class EnemyHealth : MonoBehaviour, IDamageable
             if (hp == null) hp = instance.AddComponent<HealthPickup>();
             hp.healMode = HealthPickup.HealMode.OneHeart;
             hp.heartsAmount = 1;
+            hp.LaunchPop(position);
             return instance;
         }
 
@@ -228,10 +229,10 @@ public class EnemyHealth : MonoBehaviour, IDamageable
         SpriteRenderer sr = orb.AddComponent<SpriteRenderer>();
         sr.sprite = GetOrCreateRedOrbSprite();
         sr.sortingLayerName = "Layer 1";
-        sr.sortingOrder = 250; // Visible sobre suelo, pasto y props
+        sr.sortingOrder = 3; // Visible en Layer 1 junto con el jugador y props
 
         CircleCollider2D col = orb.AddComponent<CircleCollider2D>();
-        col.radius = 0.32f;
+        col.radius = 0.35f;
         col.isTrigger = true;
 
         HealthPickup pickup = orb.AddComponent<HealthPickup>();

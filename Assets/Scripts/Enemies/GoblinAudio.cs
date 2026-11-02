@@ -108,7 +108,9 @@ public class GoblinAudio : MonoBehaviour
             return;
         }
 
-        volumenVoz = voz.volume;
+        volumenVoz = (voz != null ? voz.volume : 0.85f) * AudioManager.EnemyVolume;
+        if (pasos != null) pasos.volume = 0.55f * AudioManager.EnemyVolume;
+        if (ataques != null) ataques.volume = 0.9f * AudioManager.EnemyVolume;
         voz.playOnAwake = false;
         pasos.playOnAwake = false;
         voz.loop = false;

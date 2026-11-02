@@ -3,7 +3,7 @@ using Cainos.PixelArtTopDown_Basic;
 using UnityEngine;
 
 [DefaultExecutionOrder(60)]
-[RequireComponent(typeof(PlayerHealth), typeof(GoldCoinCollector))]
+[RequireComponent(typeof(PlayerHealth))]
 public class PlayerLantern : MonoBehaviour
 {
     public IrisInNivel opening;
@@ -12,7 +12,7 @@ public class PlayerLantern : MonoBehaviour
     public SpriteRenderer animaVisual;
     public Sprite[] animaFrames;
     public GoblinNavigation2D navigation;
-    [Min(0.1f)] public float range = 1.35f;
+    [Min(0.1f)] public float range = 2f;
     [Range(20f, 180f)] public float angle = 110f;
     [Min(0.1f)] public float cooldown = 1f;
     private UnityEngine.Rendering.SortingGroup visualGroup;
@@ -24,21 +24,26 @@ public class PlayerLantern : MonoBehaviour
     private GoldCoinCollector collector;
     private PlayerCoinSearch search;
     private TopDownCharacterController movement;
+    private Level2CharacterController level2Movement;
+    private PlayerWeaponController weaponController;
     private PlayerStoneThrow facing;
     private Collider2D body;
     private Vector2 flashDirection;
     private Vector2 flashOrigin;
-    private readonly HashSet<GoblinCombat> hitTargets = new HashSet<GoblinCombat>();
+    private readonly HashSet<GameObject> hitObjects = new HashSet<GameObject>();
     public float CooldownRemaining { get { return Mathf.Max(0f, nextAttackAt - Time.time); } }
 
     private void Awake()
     {
+        if (range < 2f) range = 2f;
         visualGroup = GetComponent<UnityEngine.Rendering.SortingGroup>();
         playerVisual = GetComponent<SpriteRenderer>();
         health = GetComponent<PlayerHealth>();
         collector = GetComponent<GoldCoinCollector>();
         search = GetComponent<PlayerCoinSearch>();
         movement = GetComponent<TopDownCharacterController>();
+        level2Movement = GetComponent<Level2CharacterController>();
+        weaponController = GetComponent<PlayerWeaponController>();
         facing = GetComponent<PlayerStoneThrow>();
         body = GetComponent<Collider2D>();
         if (flashVisual != null) flashVisual.enabled = false;
@@ -47,16 +52,26 @@ public class PlayerLantern : MonoBehaviour
 
     private void Update()
     {
+        if (weaponController != null && weaponController.isActiveAndEnabled &&
+            weaponController.currentWeapon != WeaponType.Lantern)
+            return;
+
         if (GameControls.LanternPressed) TryAttack();
     }
 
     public bool TryAttack()
     {
+        bool canMove = (movement != null && movement.enabled) ||
+                       (level2Movement != null && level2Movement.enabled) ||
+                       (movement == null && level2Movement == null);
+        bool levelFinished = collector != null && collector.isActiveAndEnabled && collector.IsLevelFinished;
+
         if (!isActiveAndEnabled || Time.timeScale <= 0f || Time.time < nextAttackAt ||
-            health == null || health.currentHealth <= 0 || collector.IsLevelFinished ||
+            health == null || health.currentHealth <= 0 || levelFinished ||
             (opening != null && opening.isActiveAndEnabled) ||
-            (search != null && search.IsSearching) ||
-            (movement != null && !movement.enabled)) return false;
+            (search != null && search.isActiveAndEnabled && search.IsSearching) ||
+            !canMove) return false;
+
         Vector2 origin = body != null ? (Vector2)body.bounds.center : (Vector2)transform.position;
         Vector2 direction = facing != null ? facing.FacingDirection : Vector2.down;
         nextAttackAt = Time.time + cooldown;
@@ -64,34 +79,78 @@ public class PlayerLantern : MonoBehaviour
         animaUntil = Time.time + 0.45f;
         flashOrigin = origin;
         flashDirection = direction;
-        hitTargets.Clear();
+        hitObjects.Clear();
+
+        int damage = weaponController != null ? Mathf.Max(17, weaponController.lanternDamage) : 17;
+
         foreach (var collider in Physics2D.OverlapCircleAll(origin, range))
         {
-            if (collider.isTrigger) continue;
+            if (collider == null || collider.transform.IsChildOf(transform)) continue;
+
             GoblinCombat target = collider.GetComponentInParent<GoblinCombat>();
-            if (target == null || target.IsBanished || !hitTargets.Add(target)) continue;
+            EnemyHealth enemyHealth = collider.GetComponentInParent<EnemyHealth>();
+            GoblinAI goblinAI = collider.GetComponentInParent<GoblinAI>();
+            IDamageable damageable = collider.GetComponentInParent<IDamageable>();
+
+            if (collider.isTrigger && target == null && enemyHealth == null && damageable == null)
+                continue;
+
+            GameObject rootObj = enemyHealth != null ? enemyHealth.gameObject :
+                                 target != null ? target.gameObject :
+                                 goblinAI != null ? goblinAI.gameObject :
+                                 (damageable as MonoBehaviour)?.gameObject;
+
+            if (rootObj == null || !hitObjects.Add(rootObj)) continue;
+
             Vector2 delta = (Vector2)collider.bounds.center - origin;
             if (delta.sqrMagnitude > 0.01f &&
                 Vector2.Dot(direction, delta.normalized) < Mathf.Cos(angle * 0.5f * Mathf.Deg2Rad))
                 continue;
             if (navigation != null && !navigation.HasLineOfSight(origin, collider.bounds.center))
                 continue;
-            target.TakeLanternHit();
+
+            if (enemyHealth != null)
+            {
+                if (!enemyHealth.IsDead)
+                    enemyHealth.TakeDamage(damage, direction);
+                if (target != null && !target.IsBanished)
+                    target.TakeLanternHit();
+            }
+            else if (target != null)
+            {
+                if (!target.IsBanished)
+                    target.TakeLanternHit();
+            }
+            else if (damageable != null && !damageable.IsDead)
+            {
+                damageable.TakeDamage(damage, direction);
+            }
         }
         return true;
     }
 
     private void LateUpdate()
     {
+        if (visualGroup == null) visualGroup = GetComponent<UnityEngine.Rendering.SortingGroup>();
+        if (visualGroup == null) visualGroup = gameObject.AddComponent<UnityEngine.Rendering.SortingGroup>();
         if (visualGroup != null && playerVisual != null)
+        {
             visualGroup.sortingLayerID = playerVisual.sortingLayerID;
+            visualGroup.sortingOrder = playerVisual.sortingOrder;
+        }
         Vector2 direction = facing != null ? facing.FacingDirection : Vector2.down;
         if (lanternVisual != null)
         {
             lanternVisual.transform.localPosition = new Vector3(direction.x == 0f ? 0.38f : direction.x * 0.32f,
                 0.42f + direction.y * 0.08f, 0f);
-            lanternVisual.sortingOrder = direction.y > 0f ? 1 : 4;
-            lanternVisual.enabled = health != null && health.currentHealth > 0;
+            if (playerVisual != null)
+            {
+                lanternVisual.sortingLayerID = playerVisual.sortingLayerID;
+            }
+            lanternVisual.sortingOrder = direction.y > 0f ? 1 : 3;
+            bool showLantern = health != null && health.currentHealth > 0 &&
+                               (weaponController == null || !weaponController.isActiveAndEnabled || weaponController.currentWeapon == WeaponType.Lantern);
+            lanternVisual.enabled = showLantern;
         }
         UpdateAnima();
         if (flashVisual == null) return;

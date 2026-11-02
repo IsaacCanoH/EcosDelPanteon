@@ -152,7 +152,7 @@ public class SpectralChildBossAI : MonoBehaviour
         if (bodyCollider != null) bodyCollider.enabled = false;
 
         if (audioSource != null && laughClip != null)
-            audioSource.PlayOneShot(laughClip, 0.85f);
+            audioSource.PlayOneShot(laughClip, 0.85f * AudioManager.EnemyVolume);
 
         // Aparición espectral con fade-in
         float t = 0f;
@@ -258,7 +258,7 @@ public class SpectralChildBossAI : MonoBehaviour
                 if (Time.time >= nextStepSoundTime && audioSource != null && stepClip != null)
                 {
                     nextStepSoundTime = Time.time + 0.42f;
-                    audioSource.PlayOneShot(stepClip, 0.35f);
+                    audioSource.PlayOneShot(stepClip, 0.35f * AudioManager.EnemyVolume);
                 }
             }
         }
@@ -298,8 +298,8 @@ public class SpectralChildBossAI : MonoBehaviour
 
         if (audioSource != null)
         {
-            if (laughClip != null) audioSource.PlayOneShot(laughClip, 0.95f);
-            if (overchargeClip != null) audioSource.PlayOneShot(overchargeClip, 0.9f);
+            if (laughClip != null) audioSource.PlayOneShot(laughClip, 0.95f * AudioManager.EnemyVolume);
+            if (overchargeClip != null) audioSource.PlayOneShot(overchargeClip, 0.9f * AudioManager.EnemyVolume);
         }
 
         StartCoroutine(OverchargeRoutine(duration));
@@ -477,7 +477,7 @@ public class SpectralChildBossAI : MonoBehaviour
 
         if (audioSource != null && projectileClip != null)
         {
-            audioSource.PlayOneShot(projectileClip, 0.85f);
+            audioSource.PlayOneShot(projectileClip, 0.85f * AudioManager.EnemyVolume);
         }
     }
 

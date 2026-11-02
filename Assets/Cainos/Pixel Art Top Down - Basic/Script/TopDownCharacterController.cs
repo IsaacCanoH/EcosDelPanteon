@@ -22,6 +22,23 @@ namespace Cainos.PixelArtTopDown_Basic
                 body.bodyType = RigidbodyType2D.Dynamic;
                 body.gravityScale = 0f;
                 body.constraints = RigidbodyConstraints2D.FreezeRotation;
+                body.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
+            }
+
+            // Quitar WorldDepth2D y asegurar SortingGroup nativo en Layer 1, orden 2
+            var depth = GetComponent<WorldDepth2D>();
+            if (depth != null) Destroy(depth);
+
+            var group = GetComponent<UnityEngine.Rendering.SortingGroup>();
+            if (group == null) group = gameObject.AddComponent<UnityEngine.Rendering.SortingGroup>();
+            group.sortingLayerName = "Layer 1";
+            group.sortingOrder = 2;
+
+            if (spriteRenderer != null)
+            {
+                spriteRenderer.sortingLayerName = "Layer 1";
+                spriteRenderer.sortingOrder = 2;
+                spriteRenderer.spriteSortPoint = SpriteSortPoint.Pivot;
             }
         }
 
@@ -31,6 +48,22 @@ namespace Cainos.PixelArtTopDown_Basic
             if (spriteRenderer == null) spriteRenderer = GetComponent<SpriteRenderer>();
             if (body == null) body = GetComponent<Rigidbody2D>();
             if (speed <= 0.1f) speed = 3.5f;
+
+            // Asegurar que el jugador esté en Layer 1, orden 2 con SortingGroup
+            var depth = GetComponent<WorldDepth2D>();
+            if (depth != null) Destroy(depth);
+
+            var group = GetComponent<UnityEngine.Rendering.SortingGroup>();
+            if (group == null) group = gameObject.AddComponent<UnityEngine.Rendering.SortingGroup>();
+            group.sortingLayerName = "Layer 1";
+            group.sortingOrder = 2;
+
+            if (spriteRenderer != null)
+            {
+                spriteRenderer.sortingLayerName = "Layer 1";
+                spriteRenderer.sortingOrder = 2;
+                spriteRenderer.spriteSortPoint = SpriteSortPoint.Pivot;
+            }
         }
 
         private void Update()

@@ -70,7 +70,7 @@ public class LloronaCinematicSequence : MonoBehaviour
         {
             ParchmentMessageUI.Instance.Show(
                 "LA LLORONA",
-                "«¿Quién perturba el sueño de mis hijos?...\n¡Mis sirvientes no tendrán piedad!»\n\n[P / ESPACIO] Continuar",
+                "«¿Quién perturba el sueño de mis hijos?...\n¡Mis sirvientes no tendrán piedad!»",
                 null,
                 () => { dialogueDone = true; },
                 true

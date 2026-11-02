@@ -4,8 +4,8 @@ using UnityEngine;
 [RequireComponent(typeof(Camera))]
 public class CameraBounds2D : MonoBehaviour
 {
-    public Vector2 minBounds = new Vector2(-17f, -13f);
-    public Vector2 maxBounds = new Vector2(17f, 10f);
+    public Vector2 minBounds = new Vector2(-22f, -13f);
+    public Vector2 maxBounds = new Vector2(22f, 13f);
 
     [Min(0f)]
     public float edgeMargin = 0.05f;

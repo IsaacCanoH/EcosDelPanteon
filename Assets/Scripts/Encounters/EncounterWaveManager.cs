@@ -174,14 +174,19 @@ public class EncounterWaveManager : MonoBehaviour
         if (ai != null)
         {
             ai.waitForFirstCoin = false;
-            ai.enablePatrol = false;
+            ai.enablePatrol = true;
             ai.BeginWaveCombat(Mathf.Max(1, CurrentWaveIndex + 1));
+
+            GoblinAwarenessUI awarenessUI = FindObjectOfType<GoblinAwarenessUI>();
+            if (awarenessUI != null)
+            {
+                awarenessUI.Track(ai);
+            }
         }
 
-        // Barra flotante de salud verde para los duendes (estilo Nivel 1)
+        // Si tenía barra flotante duplicada, desactivarla para usar la barra segmentada oficial del HUD (GoblinHealthUI)
         EnemyFloatingHealthBar healthBar = enemyObj.GetComponent<EnemyFloatingHealthBar>();
-        if (healthBar == null) healthBar = enemyObj.AddComponent<EnemyFloatingHealthBar>();
-        healthBar.isBoss = false;
+        if (healthBar != null) Destroy(healthBar);
 
         // Añadir componente de teleportación para la animación de aviso
         EnemyTeleportSpawn teleport = enemyObj.GetComponent<EnemyTeleportSpawn>();
