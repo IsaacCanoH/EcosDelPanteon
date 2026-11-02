@@ -268,8 +268,8 @@ public class ToyEncounterZone : MonoBehaviour
             if (ParchmentMessageUI.Instance != null)
             {
                 ParchmentMessageUI.Instance.Show(
-                    "SEGUNDO RECUERDO",
-                    "¡Los espíritus del panteón se resisten a soltar este juguete!\nRepele el asalto espectral y limpia la zona.\nAtaca con [Clic / Espacio].",
+                    "OLEADA 1 DE 2",
+                    "Los espíritus del panteón protegen el segundo juguete.\nExpulsa a los duendes con <link=\"key:F\"><color=#00000000> F </color></link> para purificar el altar.",
                     null,
                     null,
                     false
@@ -290,7 +290,7 @@ public class ToyEncounterZone : MonoBehaviour
             {
                 ParchmentMessageUI.Instance.Show(
                     "HORDA ESPECTRAL",
-                    "¡El panteón despierta en cólera total!\nDerrota a las 2 grandes hordas para desafiar al Niño Espectral.\nAtaca con [J / Clic].",
+                    "El panteón despierta en cólera total.\nDerrota a las 2 hordas con <link=\"key:F\"><color=#00000000> F </color></link> para desafiar al Niño Espectral.",
                     null,
                     null,
                     false
@@ -350,8 +350,8 @@ public class ToyEncounterZone : MonoBehaviour
             if (ParchmentMessageUI.Instance != null)
             {
                 ParchmentMessageUI.Instance.Show(
-                    "¡CUCHILLO GRANDE LIBERADO!",
-                    "Has derrotado a los soldados de La Llorona.\nPasa sobre el Cuchillo Grande en el suelo para equiparlo (18 DMG).\nRecupera el juguete y pulsa [3] para seleccionarlo.\n(1: Farol  |  2: Puños  |  3: Cuchillo)",
+                    "CUCHILLO DESBLOQUEADO",
+                    "Has derrotado a los soldados de La Llorona.\nRecoge el Cuchillo Grande y el primer juguete del altar.\nPulsa 1: Farol o 2: Cuchillo.",
                     null,
                     null,
                     false
@@ -363,8 +363,8 @@ public class ToyEncounterZone : MonoBehaviour
             if (ParchmentMessageUI.Instance != null)
             {
                 ParchmentMessageUI.Instance.Show(
-                    "¡ÁREA PURIFICADA!",
-                    "Las sombras del panteón retroceden.\nYa puedes recoger el segundo juguete.",
+                    "ALTAR PURIFICADO",
+                    "Las sombras del panteón retroceden.\nYa puedes recoger el segundo juguete en el altar.",
                     null,
                     null,
                     false

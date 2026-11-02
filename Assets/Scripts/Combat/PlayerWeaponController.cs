@@ -12,15 +12,15 @@ public class PlayerWeaponController : MonoBehaviour
     public bool hasMachete = false;
 
     [Header("Daño por Arma (Especificación Nivel 2)")]
-    public int lanternDamage = 16;
+    public int lanternDamage = 17;
     public int bigKnifeDamage = 18;
     public int macheteDamage = 25;
 
     [Header("Alcance y Velocidad de Ataque")]
-    public float lanternRange = 2.4f;
+    public float lanternRange = 2.0f;
     public float knifeRange = 1.25f;
     public float macheteRange = 1.55f;
-    [Range(30f, 180f)] public float attackArcAngle = 135f;
+    [Range(30f, 180f)] public float attackArcAngle = 110f;
     public float attackCooldown = 0.36f;
 
     [Header("Referencias Opcionales")]
@@ -133,7 +133,7 @@ public class PlayerWeaponController : MonoBehaviour
         var keyText = farolHud.transform.Find("Tecla_Farol")?.GetComponentInChildren<TMPro.TMP_Text>();
         var iconImg = farolHud.transform.Find("Icono_Farol")?.GetComponent<UnityEngine.UI.Image>();
 
-        if (keyText != null) keyText.text = "J";
+        if (keyText != null) keyText.text = "F";
 
         // Asegurar referencias de sprites para el HUD
         if (knifeHudSprite == null) knifeHudSprite = knifeSprite;
@@ -152,18 +152,18 @@ public class PlayerWeaponController : MonoBehaviour
         switch (currentWeapon)
         {
             case WeaponType.Lantern:
-                if (nameText != null) nameText.text = "FAROL DE ÁNIMAS";
-                if (helpText != null) helpText.text = "DESTELLO (16 DMG)";
+                if (nameText != null) nameText.text = "FAROL DE ANIMAS";
+                if (helpText != null) helpText.text = "DESTELLO";
                 if (iconImg != null && lanternHudSprite != null) { iconImg.sprite = lanternHudSprite; iconImg.preserveAspect = true; }
                 break;
             case WeaponType.BigKnife:
                 if (nameText != null) nameText.text = "CUCHILLO GRANDE";
-                if (helpText != null) helpText.text = "CORTE (18 DMG)";
+                if (helpText != null) helpText.text = "CORTE";
                 if (iconImg != null && knifeHudSprite != null) { iconImg.sprite = knifeHudSprite; iconImg.preserveAspect = true; }
                 break;
             case WeaponType.Machete:
                 if (nameText != null) nameText.text = "MACHETE";
-                if (helpText != null) helpText.text = "TAJO (25 DMG)";
+                if (helpText != null) helpText.text = "TAJO";
                 if (iconImg != null && macheteHudSprite != null) { iconImg.sprite = macheteHudSprite; iconImg.preserveAspect = true; }
                 break;
         }
@@ -297,9 +297,7 @@ public class PlayerWeaponController : MonoBehaviour
 
     private void HandleAttackInput()
     {
-        if (stoneThrower == null) stoneThrower = GetComponent<PlayerStoneThrow>();
-        bool spaceUsedForStone = stoneThrower != null && stoneThrower.RemainingStones > 0;
-        bool attackPressed = Input.GetMouseButtonDown(0) || Input.GetKeyDown(KeyCode.J) || (!spaceUsedForStone && Input.GetKeyDown(KeyCode.Space));
+        bool attackPressed = GameControls.LanternPressed || Input.GetKeyDown(KeyCode.F) || Input.GetKeyDown(KeyCode.J) || Input.GetMouseButtonDown(0);
         if (!attackPressed || Time.time < nextAttackAt)
             return;
 
@@ -314,26 +312,31 @@ public class PlayerWeaponController : MonoBehaviour
 
     public void PerformLanternAttack()
     {
-        nextAttackAt = Time.time + attackCooldown;
-
+        if (lanternComponent == null) lanternComponent = GetComponent<PlayerLantern>();
         if (lanternComponent != null)
         {
-            lanternComponent.TryAttack();
+            lanternComponent.range = Mathf.Max(2f, lanternComponent.range);
+            if (lanternComponent.TryAttack())
+            {
+                nextAttackAt = Time.time + lanternComponent.cooldown;
+                if (combatAudio != null && swingClip != null)
+                    combatAudio.PlayOneShot(swingClip);
+            }
+            return;
         }
+
+        nextAttackAt = Time.time + attackCooldown;
 
         Vector2 origin = playerCollider != null
             ? (Vector2)playerCollider.bounds.center
             : (Vector2)transform.position + Vector2.up * 0.35f;
 
-        float range = lanternRange;
-        int damage = lanternDamage;
+        float range = Mathf.Max(2f, lanternRange);
+        int damage = Mathf.Max(17, lanternDamage);
         float cosHalfArc = Mathf.Cos(attackArcAngle * 0.5f * Mathf.Deg2Rad);
 
         if (combatAudio != null && swingClip != null)
             combatAudio.PlayOneShot(swingClip);
-
-        if (attackAnimRoutine != null) StopCoroutine(attackAnimRoutine);
-        attackAnimRoutine = StartCoroutine(AnimateMeleeAttackRoutine(origin, lastFacingDir, range));
 
         HashSet<GameObject> processedRoots = new HashSet<GameObject>();
         Collider2D[] colliders = Physics2D.OverlapCircleAll(origin, range);

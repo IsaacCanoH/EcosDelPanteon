@@ -73,7 +73,7 @@ SpriteRenderer:
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -1869315837
   m_SortingLayer: 1
-  m_SortingOrder: 0
+  m_SortingOrder: 2
   m_Sprite: {fileID: 21300044, guid: 29c9cded5e558164aaf8c9bf08aa1510, type: 3}
   m_Color: {r: 0, g: 0.8751855, b: 1, a: 1}
   m_FlipX: 0
@@ -138,9 +138,7 @@ GameObject:
   - component: {fileID: 5055698509961064898}
   - component: {fileID: 5055698509961064899}
   - component: {fileID: 5055698509961064900}
-  - component: {fileID: 3321505352198800656}
-  - component: {fileID: 6788148221320800334}
-  m_Layer: 6
+  m_Layer: 20
   m_Name: PF Props - Rune Pillar X2
   m_TagString: Untagged
   m_Icon: {fileID: 0}
@@ -204,7 +202,7 @@ SpriteRenderer:
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -1869315837
   m_SortingLayer: 1
-  m_SortingOrder: 0
+  m_SortingOrder: 2
   m_Sprite: {fileID: 21300042, guid: 29c9cded5e558164aaf8c9bf08aa1510, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
@@ -242,31 +240,6 @@ BoxCollider2D:
   serializedVersion: 2
   m_Size: {x: 0.7516298, y: 0.5050783}
   m_EdgeRadius: 0
---- !u!210 &3321505352198800656
-SortingGroup:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5055698509961064897}
-  m_Enabled: 1
-  m_SortingLayerID: -1869315837
-  m_SortingLayer: 1
-  m_SortingOrder: -7
---- !u!114 &6788148221320800334
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 5055698509961064897}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4d082ea8d12322499e12d4c4d73467a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  feetOffset: 0
-  sortingLayer: Layer 1
 --- !u!1 &5055698510374027886
 GameObject:
   m_ObjectHideFlags: 0
@@ -339,7 +312,7 @@ SpriteRenderer:
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -1869315837
   m_SortingLayer: 1
-  m_SortingOrder: -1
+  m_SortingOrder: 1
   m_Sprite: {fileID: 21300010, guid: ed7554aeefd5da44a9fe1ee9b93afe77, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0

@@ -79,7 +79,7 @@ public class Level2IntroSequence : MonoBehaviour
 
         yield return new WaitForSeconds(0.1f);
 
-        // Mostrar la tarjeta de Objetivo centrada y limpia con pausa
+        // Mostrar la tarjeta de Objetivo con el diseño exacto del Nivel 1, seguida de la Pista 1 de 3
         Level2HUD.IntroSequencePlaying = false;
 
         if (ParchmentMessageUI.Instance == null)
@@ -91,14 +91,20 @@ public class Level2IntroSequence : MonoBehaviour
         if (ParchmentMessageUI.Instance != null)
         {
             ParchmentMessageUI.Instance.Show(
-                "OBJETIVO: EL PANTEÓN",
-                "Los 3 recuerdos yacen ocultos bajo las tumbas.\n" +
-                "PISTA: Busca el primer juguete en la explanada noroeste.\n" +
-                "Acércate a la zona y mantén [E] para purificarla.\n\n" +
-                "<mark=#C8A05266><color=#493419> ESPACIO </color></mark> Lanzar piedra  ·  <mark=#C8A05266><color=#493419> CLIC / J </color></mark> Atacar\n" +
-                "<mark=#C8A05266><color=#493419> 1: Farol · 2: Puños · 3: Cuchillo </color></mark>  ·  <mark=#C8A05266><color=#493419> [P] </color></mark> Pistas",
+                "OBJETIVO",
+                "Recupera los 3 juguetes.\n" +
+                "Cada uno despierta una oleada.\n" +
+                "Expúlsalos y revela otra pista.\n" +
+                "<link=\"key:F\"><color=#00000000> F </color></link> Farol: 3 golpes por duende.",
                 null,
-                EnablePlayerControls,
+                () =>
+                {
+                    EnablePlayerControls();
+                    if (Level2ClueSystem.Instance != null)
+                    {
+                        Level2ClueSystem.Instance.ShowActiveClue();
+                    }
+                },
                 true
             );
         }
@@ -110,8 +116,8 @@ public class Level2IntroSequence : MonoBehaviour
 
     private void EnablePlayerControls()
     {
-        if (legacyController != null) legacyController.enabled = true;
         if (playerController != null) playerController.enabled = true;
+        else if (legacyController != null) legacyController.enabled = true;
         if (playerWeapons != null) playerWeapons.enabled = true;
         if (playerStones != null) playerStones.enabled = true;
     }

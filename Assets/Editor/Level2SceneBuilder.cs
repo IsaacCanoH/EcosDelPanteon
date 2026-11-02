@@ -409,31 +409,46 @@ public static class Level2SceneBuilder
                 altar.name = $"Altar_Encounter_{i + 1}";
                 altar.transform.localPosition = Vector3.zero;
 
-                // Remover WorldDepth2D y SortingGroup para que el altar NO quede en orden 938 sobre el jugador
-                foreach (var wd in altar.GetComponentsInChildren<WorldDepth2D>(true))
-                {
-                    Undo.DestroyObjectImmediate(wd);
-                }
-                foreach (var sg in altar.GetComponentsInChildren<UnityEngine.Rendering.SortingGroup>(true))
-                {
-                    Undo.DestroyObjectImmediate(sg);
-                }
+                // Configurar SortingGroup y WorldDepth2D en el Altar para profundidad 2D perfecta
+                var group = altar.GetComponent<UnityEngine.Rendering.SortingGroup>();
+                if (group == null) group = Undo.AddComponent<UnityEngine.Rendering.SortingGroup>(altar);
+                group.sortingLayerName = "Layer 1";
 
-                // El altar es una plataforma de piedra en el suelo: debe estar debajo del jugador (-50)
+                var depth = altar.GetComponent<WorldDepth2D>();
+                if (depth == null) depth = Undo.AddComponent<WorldDepth2D>(altar);
+                depth.feetOffset = 0.6f;
+                depth.sortingLayer = "Layer 1";
+                depth.Refresh();
+
+                // Colisionador físico sólido para que el jugador NO atraviese el pedestal
+                var solidCol = altar.GetComponent<CircleCollider2D>();
+                if (solidCol == null) solidCol = Undo.AddComponent<CircleCollider2D>(altar);
+                solidCol.isTrigger = false;
+                solidCol.offset = new Vector2(0f, 0.75f);
+                solidCol.radius = 1.15f;
+
+                // Trigger para que las runas brillen al aproximarse
+                var triggerCol = altar.GetComponent<BoxCollider2D>();
+                if (triggerCol == null) triggerCol = Undo.AddComponent<BoxCollider2D>(altar);
+                triggerCol.isTrigger = true;
+                triggerCol.offset = new Vector2(0f, 0.75f);
+                triggerCol.size = new Vector2(2.8f, 2.2f);
+
+                // Orden relativo de las capas dentro del SortingGroup del Altar
                 foreach (var sr in altar.GetComponentsInChildren<SpriteRenderer>(true))
                 {
                     sr.sortingLayerName = "Layer 1";
                     if (sr.name.Contains("Shadow"))
                     {
-                        sr.sortingOrder = -60;
+                        sr.sortingOrder = -1;
                     }
                     else if (sr.name.Contains("Rune") || (sr.transform.parent != null && sr.transform.parent.name.Contains("Rune")))
                     {
-                        sr.sortingOrder = -40; // Runas sobre la piedra
+                        sr.sortingOrder = 1;
                     }
                     else
                     {
-                        sr.sortingOrder = -50; // Base de piedra
+                        sr.sortingOrder = 0;
                     }
                     EditorUtility.SetDirty(sr);
                     PrefabUtility.RecordPrefabInstancePropertyModifications(sr);

@@ -115,12 +115,12 @@ public class EnemyFloatingHealthBar : MonoBehaviour
         }
         else
         {
-            // Barra verde para los Duendes (idéntica al Nivel 1)
-            fillRenderer.color = clamped > 0.6f
+            // Barra de vida de 3 colores según vida restante
+            fillRenderer.color = clamped > 0.66f
                 ? new Color(0.28f, 0.85f, 0.35f, 1f)  // Verde vivo
-                : (clamped > 0.3f
-                    ? new Color(0.95f, 0.72f, 0.25f, 1f) // Ámbar
-                    : new Color(0.92f, 0.28f, 0.25f, 1f)); // Rojo
+                : (clamped > 0.33f
+                    ? new Color(0.95f, 0.78f, 0.22f, 1f) // Amarillo
+                    : new Color(0.92f, 0.25f, 0.20f, 1f)); // Rojo
         }
     }
 

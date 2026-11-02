@@ -19,8 +19,6 @@ public class PlayerHealth : MonoBehaviour
     public bool IsProtected { get { return Time.time < protectedUntil; } }
     public bool IsDead { get { return isDead; } }
 
-    // En Nivel 2 (100 de vida y 5 corazones), cada corazón equivale a 20 de vida.
-    // En Nivel 1 (5 de vida y 5 corazones), cada corazón equivale a 1 de vida.
     public int HealthPerHeart
     {
         get { return Mathf.Max(1, maxHealth / Mathf.Max(1, maxHearts)); }
@@ -38,7 +36,7 @@ public class PlayerHealth : MonoBehaviour
     private void Awake()
     {
         // En Nivel 2 (con ToyCollector o armas avanzadas), la vida base es 100 HP (5 corazones x 20 HP)
-        // para soportar balanceadamente daños de 10 (duende), 15 (proyectil jefe) y 20 (duende gordito).
+        // para soportar balanceadamente daños de 20 (duende normal = 1 corazón), 20 (proyectil/jefe) y 40 (duende gordito = 2 corazones).
         if ((GetComponent<ToyCollector>() != null || GetComponent<PlayerWeaponController>() != null || UnityEngine.SceneManagement.SceneManager.GetActiveScene().name.Contains("Nivel2")) && maxHealth <= 10)
         {
             maxHealth = 100;
@@ -87,11 +85,12 @@ public class PlayerHealth : MonoBehaviour
 
     /// <summary>
     /// Cura una cantidad exacta de corazones (por defecto 1 corazón = 20 HP en Nivel 2).
-    /// Usado por los Orbes Rojos de Vida que sueltan los Duendes Gorditos y la Sobrecarga del Jefe.
+    /// Usado por los Orbes Rojos de Vida que sueltan los Duendes Gorditos.
+    /// Solo se consume si al jugador le falta al menos 1 corazón visible.
     /// </summary>
     public bool HealHearts(int heartsToRestore = 1)
     {
-        if (isDead || heartsToRestore <= 0 || currentHealth >= maxHealth)
+        if (isDead || heartsToRestore <= 0 || currentHealth >= maxHealth || ActiveHearts >= maxHearts)
             return false;
 
         return Heal(heartsToRestore * HealthPerHeart);
@@ -103,7 +102,7 @@ public class PlayerHealth : MonoBehaviour
     /// </summary>
     public bool HealFull()
     {
-        if (isDead || currentHealth >= maxHealth)
+        if (isDead || currentHealth >= maxHealth || ActiveHearts >= maxHearts)
             return false;
 
         return Heal(maxHealth);

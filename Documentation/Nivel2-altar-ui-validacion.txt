@@ -1,0 +1,38 @@
+[PASS] Three encounter altars found in scene
+[PASS] Altar_Encounter_2 has CircleCollider2D
+[PASS] Altar_Encounter_2 CircleCollider2D is NOT a trigger (solid physical obstacle)
+[PASS] Altar_Encounter_2 CircleCollider2D has proper radius (1.15)
+[PASS] Altar_Encounter_2 has BoxCollider2D for rune glow
+[PASS] Altar_Encounter_2 BoxCollider2D is a trigger
+[PASS] Altar_Encounter_2 has enabled SortingGroup
+[PASS] Altar_Encounter_2 SortingGroup layer is Layer 1
+[PASS] Altar_Encounter_2 has enabled WorldDepth2D
+[PASS] Altar_Encounter_2 WorldDepth2D feetOffset is set to base contact point (0.6)
+[PASS] Altar_Encounter_3 has CircleCollider2D
+[PASS] Altar_Encounter_3 CircleCollider2D is NOT a trigger (solid physical obstacle)
+[PASS] Altar_Encounter_3 CircleCollider2D has proper radius (1.15)
+[PASS] Altar_Encounter_3 has BoxCollider2D for rune glow
+[PASS] Altar_Encounter_3 BoxCollider2D is a trigger
+[PASS] Altar_Encounter_3 has enabled SortingGroup
+[PASS] Altar_Encounter_3 SortingGroup layer is Layer 1
+[PASS] Altar_Encounter_3 has enabled WorldDepth2D
+[PASS] Altar_Encounter_3 WorldDepth2D feetOffset is set to base contact point (0.6)
+[PASS] Altar_Encounter_1 has CircleCollider2D
+[PASS] Altar_Encounter_1 CircleCollider2D is NOT a trigger (solid physical obstacle)
+[PASS] Altar_Encounter_1 CircleCollider2D has proper radius (1.15)
+[PASS] Altar_Encounter_1 has BoxCollider2D for rune glow
+[PASS] Altar_Encounter_1 BoxCollider2D is a trigger
+[PASS] Altar_Encounter_1 has enabled SortingGroup
+[PASS] Altar_Encounter_1 SortingGroup layer is Layer 1
+[PASS] Altar_Encounter_1 has enabled WorldDepth2D
+[PASS] Altar_Encounter_1 WorldDepth2D feetOffset is set to base contact point (0.6)
+[PASS] Player found in scene
+[PASS] Player has TopDownCharacterController enabled
+[PASS] ParchmentMessageUI found in scene
+[PASS] ParchmentCard found in hierarchy
+[PASS] ParchmentCard has wide comfortable width (840)
+[PASS] ParchmentCard has comfortable height (215)
+[PASS] CardTitle exists with clear font size
+[PASS] CardBody has clear font size and word wrapping
+[PASS] Player south of altar (order 950) renders IN FRONT of Altar (order 932)
+[PASS] Player north of altar (order 925) renders BEHIND Altar (order 932)

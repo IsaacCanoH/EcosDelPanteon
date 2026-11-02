@@ -72,7 +72,7 @@ SpriteRenderer:
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -1869315837
   m_SortingLayer: 1
-  m_SortingOrder: -1
+  m_SortingOrder: 1
   m_Sprite: {fileID: 21300050, guid: ed7554aeefd5da44a9fe1ee9b93afe77, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
@@ -96,8 +96,6 @@ GameObject:
   - component: {fileID: 2577585254963922478}
   - component: {fileID: 2577585254963922476}
   - component: {fileID: 9140004029675014805}
-  - component: {fileID: 5464831345789522904}
-  - component: {fileID: 5077105343137971983}
   m_Layer: 20
   m_Name: PF Props - Pot 03
   m_TagString: Untagged
@@ -161,7 +159,7 @@ SpriteRenderer:
   m_LightmapParameters: {fileID: 0}
   m_SortingLayerID: -1869315837
   m_SortingLayer: 1
-  m_SortingOrder: 0
+  m_SortingOrder: 2
   m_Sprite: {fileID: 21300094, guid: 29c9cded5e558164aaf8c9bf08aa1510, type: 3}
   m_Color: {r: 1, g: 1, b: 1, a: 1}
   m_FlipX: 0
@@ -225,28 +223,3 @@ PolygonCollider2D:
       - {x: -0.11308575, y: 0.02905941}
       - {x: 0.107274055, y: 0.031965256}
       - {x: 0.20574903, y: 0.11417794}
---- !u!210 &5464831345789522904
-SortingGroup:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2577585254963922480}
-  m_Enabled: 1
-  m_SortingLayerID: -1869315837
-  m_SortingLayer: 1
-  m_SortingOrder: -301
---- !u!114 &5077105343137971983
-MonoBehaviour:
-  m_ObjectHideFlags: 0
-  m_CorrespondingSourceObject: {fileID: 0}
-  m_PrefabInstance: {fileID: 0}
-  m_PrefabAsset: {fileID: 0}
-  m_GameObject: {fileID: 2577585254963922480}
-  m_Enabled: 1
-  m_EditorHideFlags: 0
-  m_Script: {fileID: 11500000, guid: f4d082ea8d12322499e12d4c4d73467a, type: 3}
-  m_Name: 
-  m_EditorClassIdentifier: 
-  feetOffset: 0
-  sortingLayer: Layer 1

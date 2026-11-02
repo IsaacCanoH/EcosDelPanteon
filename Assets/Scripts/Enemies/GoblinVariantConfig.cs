@@ -30,7 +30,7 @@ public class GoblinVariantConfig : MonoBehaviour
 
         if (isChubby)
         {
-            // Duende Gordito: 80 HP, 20 daño, más lento (0.95), suelta 1 orbe de vida (+1 corazón)
+            // Duende Gordito: 80 HP, 40 daño (2 corazones), más lento (0.95), suelta 1 orbe de vida (+1 corazón)
             if (health != null)
             {
                 health.ConfigureVariant(EnemyHealth.EnemyVariant.ChubbyGoblin);
@@ -38,7 +38,7 @@ public class GoblinVariantConfig : MonoBehaviour
 
             if (ai != null)
             {
-                ai.attackDamage = 20;
+                ai.attackDamage = 40;
                 ai.moveSpeed = 0.95f;
             }
 
@@ -56,7 +56,7 @@ public class GoblinVariantConfig : MonoBehaviour
         }
         else
         {
-            // Duende Normal: 50 HP, 10 daño, velocidad estándar (1.4f)
+            // Duende Normal: 50 HP, 20 daño (1 corazón), velocidad estándar (1.35f)
             if (health != null)
             {
                 health.ConfigureVariant(EnemyHealth.EnemyVariant.NormalGoblin);
@@ -64,7 +64,7 @@ public class GoblinVariantConfig : MonoBehaviour
 
             if (ai != null)
             {
-                ai.attackDamage = 10;
+                ai.attackDamage = 20;
                 ai.moveSpeed = 1.35f;
             }
 

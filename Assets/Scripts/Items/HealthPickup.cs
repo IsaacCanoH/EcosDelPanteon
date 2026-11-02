@@ -91,7 +91,7 @@ public class HealthPickup : MonoBehaviour
         {
             var health = targetPlayer.GetComponent<PlayerHealth>();
             bool needsHeal = health != null && !health.IsDead &&
-                             (allowPickupAtFullHealth || health.currentHealth < health.maxHealth);
+                             (allowPickupAtFullHealth || (health.currentHealth < health.maxHealth && health.ActiveHearts < health.maxHearts));
 
             if (needsHeal)
             {
@@ -129,7 +129,7 @@ public class HealthPickup : MonoBehaviour
         PlayerHealth playerHealth = other.GetComponentInParent<PlayerHealth>();
         if (playerHealth == null || playerHealth.IsDead) return;
 
-        if (!allowPickupAtFullHealth && playerHealth.currentHealth >= playerHealth.maxHealth)
+        if (!allowPickupAtFullHealth && (playerHealth.currentHealth >= playerHealth.maxHealth || playerHealth.ActiveHearts >= playerHealth.maxHearts))
             return;
 
         bool healed;

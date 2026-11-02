@@ -1,0 +1,224 @@
+using UnityEngine;
+using UnityEngine.SceneManagement;
+using UnityEngine.Rendering;
+
+/// <summary>
+/// Garantiza la configuración de capas, colisiones sólidas de bancas y props,
+/// e inicialización de indicadores de alerta/sospecha en el Nivel 2.
+/// </summary>
+public static class Level2SceneRuntimeSetup
+{
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
+    private static void Init()
+    {
+        SceneManager.sceneLoaded -= OnSceneLoaded;
+        SceneManager.sceneLoaded += OnSceneLoaded;
+        ApplyFixes(SceneManager.GetActiveScene());
+    }
+
+    private static void OnSceneLoaded(Scene scene, LoadSceneMode mode)
+    {
+        ApplyFixes(scene);
+    }
+
+    public static void ApplyFixes(Scene scene)
+    {
+        if (string.IsNullOrEmpty(scene.name) || !scene.name.Contains("Nivel2"))
+            return;
+
+        int obstaclesLayer = LayerMask.NameToLayer("Obstacles");
+        if (obstaclesLayer < 0) obstaclesLayer = 6;
+
+        // 1. Configuración del Jugador
+        GameObject player = GameObject.FindWithTag("Player");
+        if (player != null)
+        {
+            var depth = player.GetComponent<WorldDepth2D>();
+            if (depth != null) Object.Destroy(depth);
+
+            var group = player.GetComponent<SortingGroup>();
+            if (group == null) group = player.AddComponent<SortingGroup>();
+            group.sortingLayerName = "Layer 1";
+            group.sortingOrder = 2;
+
+            var rb = player.GetComponent<Rigidbody2D>();
+            if (rb != null)
+            {
+                rb.bodyType = RigidbodyType2D.Dynamic;
+                rb.gravityScale = 0f;
+                rb.constraints = RigidbodyConstraints2D.FreezeRotation;
+                rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
+            }
+
+            var sr = player.GetComponent<SpriteRenderer>();
+            if (sr != null)
+            {
+                sr.sortingLayerName = "Layer 1";
+                sr.sortingOrder = 2;
+                sr.spriteSortPoint = SpriteSortPoint.Pivot;
+            }
+        }
+
+        // 2. Limpieza de SortingGroup y WorldDepth2D en props que alteran el orden natural Y
+        foreach (var depth in Object.FindObjectsOfType<WorldDepth2D>(true))
+        {
+            if (depth != null) Object.Destroy(depth);
+        }
+        foreach (var sg in Object.FindObjectsOfType<SortingGroup>(true))
+        {
+            // No destruir SortingGroup en UI ni en el Jugador
+            if (sg != null && sg.GetComponentInParent<Canvas>() == null &&
+                !sg.CompareTag("Player") && sg.name != "PF Player")
+            {
+                Object.Destroy(sg);
+            }
+        }
+
+        // 3. Configuración sólida y de capas para Bancas y Props
+        foreach (var t in Object.FindObjectsOfType<Transform>(true))
+        {
+            if (t == null) continue;
+            string n = t.name;
+
+            // Bancas de piedra
+            if (n.Contains("Bench"))
+            {
+                t.gameObject.layer = obstaclesLayer;
+
+                var box = t.GetComponent<BoxCollider2D>();
+                if (box == null) box = t.gameObject.AddComponent<BoxCollider2D>();
+                box.enabled = true;
+                box.isTrigger = false;
+
+                if (n.Contains("Bench 01 S") || n.Contains("Stone Bench 01 S"))
+                {
+                    box.offset = new Vector2(0f, 0.45f);
+                    box.size = new Vector2(1.70f, 0.90f);
+                }
+                else if (n.Contains("Bench 01 E") || n.Contains("Stone Bench 01 E"))
+                {
+                    box.offset = new Vector2(0.05f, 0.65f);
+                    box.size = new Vector2(0.70f, 1.30f);
+                }
+                else if (n.Contains("Bench 01 W") || n.Contains("Stone Bench 01 W"))
+                {
+                    box.offset = new Vector2(-0.05f, 0.65f);
+                    box.size = new Vector2(0.70f, 1.30f);
+                }
+
+                var sr = t.GetComponent<SpriteRenderer>();
+                if (sr != null)
+                {
+                    sr.sortingLayerName = "Layer 1";
+                    sr.sortingOrder = 2;
+                    sr.spriteSortPoint = SpriteSortPoint.Pivot;
+                }
+
+                Transform shadow = t.Find("Shadow");
+                if (shadow != null)
+                {
+                    var shadowSr = shadow.GetComponent<SpriteRenderer>();
+                    if (shadowSr != null)
+                    {
+                        shadowSr.sortingLayerName = "Layer 1";
+                        shadowSr.sortingOrder = 1;
+                        shadowSr.spriteSortPoint = SpriteSortPoint.Pivot;
+                    }
+                }
+            }
+            // Altares de encuentro
+            else if (n.StartsWith("Altar_Encounter_"))
+            {
+                t.gameObject.layer = obstaclesLayer;
+
+                var circle = t.GetComponent<CircleCollider2D>();
+                if (circle == null) circle = t.gameObject.AddComponent<CircleCollider2D>();
+                circle.enabled = true;
+                circle.isTrigger = false;
+                circle.offset = new Vector2(0f, 0.70f);
+                circle.radius = 1.40f;
+
+                var box = t.GetComponent<BoxCollider2D>();
+                if (box != null)
+                {
+                    box.enabled = true;
+                    box.isTrigger = false;
+                }
+
+                foreach (var sr in t.GetComponentsInChildren<SpriteRenderer>(true))
+                {
+                    sr.sortingLayerName = "Layer 1";
+                    sr.spriteSortPoint = SpriteSortPoint.Pivot;
+                    sr.sortingOrder = sr.name.Contains("Shadow") ? 1 : 2;
+                }
+            }
+            // Árboles
+            else if (n.Contains("Tree") && !n.Contains("Trunk"))
+            {
+                Transform lower = t.Find("Lower");
+                if (lower != null)
+                {
+                    var lowerSr = lower.GetComponent<SpriteRenderer>();
+                    if (lowerSr != null)
+                    {
+                        lowerSr.sortingLayerName = "Layer 1";
+                        lowerSr.sortingOrder = 2;
+                        lowerSr.spriteSortPoint = SpriteSortPoint.Pivot;
+                    }
+                }
+                Transform upper = t.Find("Upper");
+                if (upper != null)
+                {
+                    var upperSr = upper.GetComponent<SpriteRenderer>();
+                    if (upperSr != null)
+                    {
+                        upperSr.sortingLayerName = "Layer 2";
+                        upperSr.sortingOrder = 2;
+                        upperSr.spriteSortPoint = SpriteSortPoint.Pivot;
+                    }
+                }
+                Transform shadow = t.Find("Shadow");
+                if (shadow != null)
+                {
+                    var shadowSr = shadow.GetComponent<SpriteRenderer>();
+                    if (shadowSr != null)
+                    {
+                        shadowSr.sortingLayerName = "Layer 1";
+                        shadowSr.sortingOrder = 1;
+                        shadowSr.spriteSortPoint = SpriteSortPoint.Pivot;
+                    }
+                }
+                var sr = t.GetComponent<SpriteRenderer>();
+                if (sr != null)
+                {
+                    sr.sortingLayerName = "Layer 1";
+                    sr.sortingOrder = 2;
+                    sr.spriteSortPoint = SpriteSortPoint.Pivot;
+                }
+            }
+            // Arbustos y vegetación
+            else if (n.Contains("Bush") || n.Contains("Plant") || n.Contains("Flower"))
+            {
+                var sr = t.GetComponent<SpriteRenderer>();
+                if (sr != null)
+                {
+                    sr.sortingLayerName = "Layer 1";
+                    sr.sortingOrder = 2;
+                    sr.spriteSortPoint = SpriteSortPoint.Pivot;
+                }
+            }
+        }
+
+        // 4. Asegurar que los Avisos de Goblin estén activos para GoblinAwarenessUI
+        foreach (var t in Object.FindObjectsOfType<Transform>(true))
+        {
+            if (t != null && t.name.StartsWith("Aviso_Goblin_"))
+            {
+                t.gameObject.SetActive(true);
+                var cg = t.GetComponent<CanvasGroup>();
+                if (cg != null) cg.alpha = 0f;
+            }
+        }
+    }
+}
+

@@ -179,9 +179,18 @@ public sealed class Level2HUD : MonoBehaviour
 
     private void SetupSubHUDLayout()
     {
-        // Buscar o crear contenedor de Piedras y Armas debajo de los juguetes
+        // Si ya existen Piedras_HUD y Farol_HUD en el Canvas_HUD (heredados del Nivel 1), no duplicar filas
         Transform hudRoot = transform.Find("HUD");
         if (hudRoot == null) hudRoot = transform;
+
+        if (hudRoot.Find("Piedras_HUD") != null || hudRoot.Find("Farol_HUD") != null)
+        {
+            Transform oldPiedras = hudRoot.Find("Piedras_Row");
+            if (oldPiedras != null) oldPiedras.gameObject.SetActive(false);
+            Transform oldArma = hudRoot.Find("Arma_Row");
+            if (oldArma != null) oldArma.gameObject.SetActive(false);
+            return;
+        }
 
         TMP_FontAsset font = null;
         if (healthText != null) font = healthText.font;
