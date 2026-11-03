@@ -4,7 +4,7 @@ using UnityEngine.Rendering;
 
 /// <summary>
 /// Garantiza la configuración de capas, colisiones sólidas de bancas y props,
-/// e inicialización de indicadores de alerta/sospecha en el Nivel 2.
+/// inicialización de indicadores de alerta/sospecha, y eliminación de tarjetas dobles en el Nivel 2.
 /// </summary>
 public static class Level2SceneRuntimeSetup
 {
@@ -219,6 +219,63 @@ public static class Level2SceneRuntimeSetup
                 if (cg != null) cg.alpha = 0f;
             }
         }
+
+        // 5. Limpieza de tarjetas dobles de objetivo y mensajes huérfanos en Nivel 2
+        var hud = GameObject.Find("Canvas_HUD");
+        if (hud != null)
+        {
+            var controlMensajes = hud.transform.Find("Control_Mensajes");
+            if (controlMensajes != null)
+            {
+                Object.Destroy(controlMensajes.gameObject);
+            }
+
+            var pMsgUI = hud.GetComponentInChildren<ParchmentMessageUI>(true);
+            if (pMsgUI != null)
+            {
+                for (int i = pMsgUI.transform.childCount - 1; i >= 0; i--)
+                {
+                    Transform ch = pMsgUI.transform.GetChild(i);
+                    ch.gameObject.SetActive(false);
+                    Object.Destroy(ch.gameObject);
+                }
+                pMsgUI.SetupProceduralUIIfMissing();
+            }
+
+            foreach (var t in hud.GetComponentsInChildren<Transform>(true))
+            {
+                if (t != null && t.name == "ParchmentCard")
+                {
+                    t.gameObject.SetActive(false);
+                    Object.Destroy(t.gameObject);
+                }
+            }
+
+            var busqueda = hud.transform.Find("BusquedaMonedas");
+            if (busqueda != null)
+            {
+                busqueda.gameObject.SetActive(true);
+                var coinSearch = busqueda.GetComponent<CoinSearchUI>();
+                if (coinSearch != null) coinSearch.enabled = false;
+
+                var indicador = busqueda.Find("Indicador_Busqueda");
+                if (indicador != null) indicador.gameObject.SetActive(false);
+
+                var acceso = busqueda.Find("Acceso_Pista_P");
+                if (acceso != null) acceso.gameObject.SetActive(true);
+
+                var tarjetaPista = busqueda.Find("Tarjeta_Pista");
+                if (tarjetaPista != null)
+                {
+                    var cg = tarjetaPista.GetComponent<CanvasGroup>();
+                    if (cg != null)
+                    {
+                        cg.alpha = 0f;
+                        cg.interactable = false;
+                        cg.blocksRaycasts = false;
+                    }
+                }
+            }
+        }
     }
 }
-

@@ -274,7 +274,7 @@ public class PlayerWeaponController : MonoBehaviour
             else
             {
                 if (ParchmentMessageUI.Instance != null)
-                    ParchmentMessageUI.Instance.Show("ARMA BLOQUEADA", "Derrota la primera oleada de duendes para desbloquear el Cuchillo Grande.", null, null, false);
+                    ParchmentMessageUI.Instance.Show("ARMA BLOQUEADA", "Derrota la primera oleada de duendes para desbloquear el Cuchillo Grande.", null, null, true);
             }
         }
         else if (Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.Keypad3))
@@ -286,7 +286,7 @@ public class PlayerWeaponController : MonoBehaviour
             else
             {
                 if (ParchmentMessageUI.Instance != null)
-                    ParchmentMessageUI.Instance.Show("ARMA BLOQUEADA", "Derrota al Niño Espectral para desbloquear el Machete.", null, null, false);
+                    ParchmentMessageUI.Instance.Show("ARMA BLOQUEADA", "Derrota al Niño Espectral para desbloquear el Machete.", null, null, true);
             }
         }
         else if (Input.GetKeyDown(KeyCode.Q) || Mathf.Abs(Input.mouseScrollDelta.y) > 0.1f)
