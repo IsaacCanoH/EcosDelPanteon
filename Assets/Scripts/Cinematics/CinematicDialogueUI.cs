@@ -14,6 +14,7 @@ public class CinematicDialogueUI : MonoBehaviour
     public TMP_Text bodyText;
     public TMP_Text promptText;
     public Image speakerIcon;
+    public TMP_FontAsset pixelFont;
 
     [Header("Configuración")]
     public float typingSpeed = 0.025f;
@@ -23,6 +24,7 @@ public class CinematicDialogueUI : MonoBehaviour
     private bool isTyping = false;
     private string fullTargetText = "";
     private bool isShowing = false;
+    private float previousTimeScale = 1f;
 
     private Cainos.PixelArtTopDown_Basic.Level2CharacterController cachedPlayerMove;
     private PlayerWeaponController cachedPlayerWeapon;
@@ -48,8 +50,8 @@ public class CinematicDialogueUI : MonoBehaviour
     {
         if (!isShowing) return;
 
-        // Avanzar o completar texto al presionar Espacio, Enter o Clic Izquierdo
-        if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.Return) || Input.GetMouseButtonDown(0))
+        // Avanzar texto o cerrar diálogo ÚNICAMENTE al presionar la tecla P
+        if (GameControls.CluePressed || Input.GetKeyDown(KeyCode.P))
         {
             if (isTyping)
             {
@@ -74,13 +76,18 @@ public class CinematicDialogueUI : MonoBehaviour
 
         LockPlayerInput(true);
 
+        // Pausa obligatoria del juego durante el diálogo
+        if (Time.timeScale > 0f) previousTimeScale = Time.timeScale;
+        Time.timeScale = 0f;
+        AudioListener.pause = true;
+
         if (speakerText != null) speakerText.text = speakerName.ToUpper();
         if (speakerIcon != null)
         {
             speakerIcon.gameObject.SetActive(icon != null);
             speakerIcon.sprite = icon;
         }
-        if (promptText != null) promptText.text = "Presiona [Espacio / Clic] para continuar";
+        if (promptText != null) promptText.text = "Presiona [P] para continuar";
 
         if (dialogueCanvasGroup != null)
         {
@@ -101,7 +108,7 @@ public class CinematicDialogueUI : MonoBehaviour
         for (int i = 0; i < message.Length; i++)
         {
             if (bodyText != null) bodyText.text += message[i];
-            yield return new WaitForSeconds(typingSpeed);
+            yield return new WaitForSecondsRealtime(typingSpeed);
         }
 
         isTyping = false;
@@ -115,6 +122,9 @@ public class CinematicDialogueUI : MonoBehaviour
         StartCoroutine(FadeOutRoutine(() =>
         {
             LockPlayerInput(false);
+            Time.timeScale = previousTimeScale > 0f ? previousTimeScale : 1f;
+            AudioListener.pause = false;
+
             Action callback = onDialogueCompleted;
             onDialogueCompleted = null;
             callback?.Invoke();
@@ -128,7 +138,7 @@ public class CinematicDialogueUI : MonoBehaviour
             float t = 0f;
             while (t < 0.2f)
             {
-                t += Time.deltaTime;
+                t += Time.unscaledDeltaTime;
                 dialogueCanvasGroup.alpha = Mathf.Lerp(1f, 0f, t / 0.2f);
                 yield return null;
             }
@@ -168,6 +178,11 @@ public class CinematicDialogueUI : MonoBehaviour
 
     private void SetupProceduralUIIfMissing()
     {
+#if UNITY_EDITOR
+        if (pixelFont == null)
+            pixelFont = UnityEditor.AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/Fonts/PressStart2P-Regular SDF.asset");
+#endif
+
         Canvas canvas = GetComponentInParent<Canvas>();
         if (canvas == null)
         {
@@ -217,8 +232,8 @@ public class CinematicDialogueUI : MonoBehaviour
         nameRt.anchoredPosition = new Vector2(130f, -14f);
         nameRt.sizeDelta = new Vector2(-150f, 30f);
         speakerText = nameObj.AddComponent<TextMeshProUGUI>();
-        speakerText.fontSize = 20;
-        speakerText.fontStyle = FontStyles.Bold;
+        if (pixelFont != null) speakerText.font = pixelFont;
+        speakerText.fontSize = 15;
         speakerText.color = new Color(0.35f, 0.85f, 1f, 1f);
 
         // Message Body
@@ -231,7 +246,9 @@ public class CinematicDialogueUI : MonoBehaviour
         bodyRt.anchoredPosition = new Vector2(130f, -12f);
         bodyRt.sizeDelta = new Vector2(-150f, -60f);
         bodyText = bodyObj.AddComponent<TextMeshProUGUI>();
-        bodyText.fontSize = 17;
+        if (pixelFont != null) bodyText.font = pixelFont;
+        bodyText.fontSize = 12;
+        bodyText.lineSpacing = 10f;
         bodyText.color = Color.white;
         bodyText.enableWordWrapping = true;
 
@@ -245,7 +262,8 @@ public class CinematicDialogueUI : MonoBehaviour
         promptRt.anchoredPosition = new Vector2(-16f, 10f);
         promptRt.sizeDelta = new Vector2(300f, 20f);
         promptText = promptObj.AddComponent<TextMeshProUGUI>();
-        promptText.fontSize = 12;
+        if (pixelFont != null) promptText.font = pixelFont;
+        promptText.fontSize = 10;
         promptText.alignment = TextAlignmentOptions.BottomRight;
         promptText.color = new Color(0.7f, 0.7f, 0.7f, 0.8f);
     }

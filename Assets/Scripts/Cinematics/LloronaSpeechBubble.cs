@@ -121,7 +121,7 @@ public class LloronaSpeechBubble : MonoBehaviour
         hintRt.sizeDelta = new Vector2(-20f, 16f);
         hintText = hintObj.AddComponent<TextMeshProUGUI>();
         if (pixelFont != null) hintText.font = pixelFont;
-        hintText.text = "[ESPACIO / P]";
+        hintText.text = "[P] CONTINUAR";
         hintText.alignment = TextAlignmentOptions.Center;
         hintText.fontSize = 8f;
         hintText.color = new Color(0.52f, 0.42f, 0.32f, 0.9f);
@@ -134,11 +134,15 @@ public class LloronaSpeechBubble : MonoBehaviour
         isTyping = true;
         if (bodyText != null) bodyText.text = "";
 
+        float prevTimeScale = Time.timeScale;
+        Time.timeScale = 0f;
+        AudioListener.pause = true;
+
         // Fade in suave del bocadillo
         float t = 0f;
         while (t < 0.2f)
         {
-            t += Time.deltaTime;
+            t += Time.unscaledDeltaTime;
             canvasGroup.alpha = Mathf.Lerp(0f, 1f, t / 0.2f);
             yield return null;
         }
@@ -148,17 +152,14 @@ public class LloronaSpeechBubble : MonoBehaviour
         for (int i = 0; i < text.Length; i++)
         {
             if (bodyText != null) bodyText.text += text[i];
-            yield return new WaitForSeconds(typingSpeed);
+            yield return new WaitForSecondsRealtime(typingSpeed);
         }
         isTyping = false;
 
-        // Esperar que el jugador confirme para continuar
-        float elapsed = 0f;
-        while (elapsed < 5.0f) // Avanza automáticamente si no presiona nada tras 5 segundos
+        // Esperar que el jugador confirme ÚNICAMENTE con la tecla P para continuar
+        while (true)
         {
-            elapsed += Time.deltaTime;
-            if (Input.GetKeyDown(KeyCode.Space) || Input.GetKeyDown(KeyCode.P) ||
-                Input.GetKeyDown(KeyCode.Return) || Input.GetMouseButtonDown(0))
+            if (Input.GetKeyDown(KeyCode.P) || GameControls.CluePressed)
             {
                 break;
             }
@@ -169,10 +170,13 @@ public class LloronaSpeechBubble : MonoBehaviour
         t = 0f;
         while (t < 0.2f)
         {
-            t += Time.deltaTime;
+            t += Time.unscaledDeltaTime;
             if (canvasGroup != null) canvasGroup.alpha = Mathf.Lerp(1f, 0f, t / 0.2f);
             yield return null;
         }
         if (canvasGroup != null) canvasGroup.alpha = 0f;
+
+        Time.timeScale = prevTimeScale > 0f ? prevTimeScale : 1f;
+        AudioListener.pause = false;
     }
 }

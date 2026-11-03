@@ -272,7 +272,7 @@ public class ToyEncounterZone : MonoBehaviour
                     "Los espíritus del panteón protegen el segundo juguete.\nExpulsa a los duendes con <link=\"key:F\"><color=#00000000> F </color></link> para purificar el altar.",
                     null,
                     null,
-                    false
+                    true
                 );
             }
             yield return new WaitForSeconds(1.0f);
@@ -293,7 +293,7 @@ public class ToyEncounterZone : MonoBehaviour
                     "El panteón despierta en cólera total.\nDerrota a las 2 hordas con <link=\"key:F\"><color=#00000000> F </color></link> para desafiar al Niño Espectral.",
                     null,
                     null,
-                    false
+                    true
                 );
             }
             yield return new WaitForSeconds(1.0f);
@@ -354,7 +354,7 @@ public class ToyEncounterZone : MonoBehaviour
                     "Has derrotado a los soldados de La Llorona.\nRecoge el Cuchillo Grande y el primer juguete del altar.\nPulsa 1: Farol o 2: Cuchillo.",
                     null,
                     null,
-                    false
+                    true
                 );
             }
         }
@@ -367,7 +367,7 @@ public class ToyEncounterZone : MonoBehaviour
                     "Las sombras del panteón retroceden.\nYa puedes recoger el segundo juguete en el altar.",
                     null,
                     null,
-                    false
+                    true
                 );
             }
         }
@@ -481,7 +481,7 @@ public class ToyEncounterZone : MonoBehaviour
                 "Has vencido al Niño Espectral.\nRecoge el Machete (25 DMG) y la Poción de Vida del suelo.\nRecupera el último juguete para desbloquear la salida del panteón.",
                 null,
                 null,
-                false
+                true
             );
         }
 
