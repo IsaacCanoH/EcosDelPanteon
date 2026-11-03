@@ -13,8 +13,8 @@ public class PlayerWeaponController : MonoBehaviour
 
     [Header("Daño por Arma (Especificación Nivel 2)")]
     public int lanternDamage = 17;
-    public int bigKnifeDamage = 18;
-    public int macheteDamage = 25;
+    public int bigKnifeDamage = 26;
+    public int macheteDamage = 35;
 
     [Header("Alcance y Velocidad de Ataque")]
     public float lanternRange = 2.0f;
@@ -90,9 +90,9 @@ public class PlayerWeaponController : MonoBehaviour
         {
             switch (currentWeapon)
             {
-                case WeaponType.BigKnife: return "Cuchillo Grande (18 DMG)";
-                case WeaponType.Machete: return "Machete (25 DMG)";
-                default: return "Farol de Ánimas (16 DMG)";
+                case WeaponType.BigKnife: return "Cuchillo (26 DMG)";
+                case WeaponType.Machete: return "Machete (35 DMG)";
+                default: return "Farol de Ánimas (17 DMG)";
             }
         }
     }
@@ -121,6 +121,7 @@ public class PlayerWeaponController : MonoBehaviour
     private void Start()
     {
         UpdateFarolHUD();
+        UpdateEquippedHandWeaponVisual();
     }
 
     public void UpdateFarolHUD()
@@ -157,13 +158,13 @@ public class PlayerWeaponController : MonoBehaviour
                 if (iconImg != null && lanternHudSprite != null) { iconImg.sprite = lanternHudSprite; iconImg.preserveAspect = true; }
                 break;
             case WeaponType.BigKnife:
-                if (nameText != null) nameText.text = "CUCHILLO GRANDE";
-                if (helpText != null) helpText.text = "CORTE";
+                if (nameText != null) nameText.text = "CUCHILLO";
+                if (helpText != null) helpText.text = "CORTE (26 DMG)";
                 if (iconImg != null && knifeHudSprite != null) { iconImg.sprite = knifeHudSprite; iconImg.preserveAspect = true; }
                 break;
             case WeaponType.Machete:
                 if (nameText != null) nameText.text = "MACHETE";
-                if (helpText != null) helpText.text = "TAJO";
+                if (helpText != null) helpText.text = "TAJO (35 DMG)";
                 if (iconImg != null && macheteHudSprite != null) { iconImg.sprite = macheteHudSprite; iconImg.preserveAspect = true; }
                 break;
         }
@@ -221,7 +222,11 @@ public class PlayerWeaponController : MonoBehaviour
         handWeaponObj = new GameObject("HandWeaponVisual");
         handWeaponObj.transform.SetParent(transform, false);
         handWeaponRenderer = handWeaponObj.AddComponent<SpriteRenderer>();
-        handWeaponRenderer.sortingOrder = playerSprite != null ? playerSprite.sortingOrder + 1 : 480;
+        if (playerSprite != null)
+        {
+            handWeaponRenderer.sortingLayerID = playerSprite.sortingLayerID;
+            handWeaponRenderer.sortingOrder = playerSprite.sortingOrder + 1;
+        }
         handWeaponRenderer.enabled = false;
     }
 
@@ -233,6 +238,91 @@ public class PlayerWeaponController : MonoBehaviour
         UpdateFacingDirection();
         HandleWeaponSwitchInput();
         HandleAttackInput();
+    }
+
+    private void LateUpdate()
+    {
+        UpdateEquippedHandWeaponVisual();
+    }
+
+    public void UpdateEquippedHandWeaponVisual()
+    {
+        if (handWeaponRenderer == null || handWeaponObj == null) return;
+
+        bool isDead = playerHealth != null && playerHealth.currentHealth <= 0;
+        bool isMeleeEquipped = currentWeapon == WeaponType.BigKnife || currentWeapon == WeaponType.Machete;
+
+        // Si el jugador está muerto o el arma equipada no es cuerpo a cuerpo, ocultar
+        if (isDead || !isMeleeEquipped)
+        {
+            if (handWeaponRenderer.enabled) handWeaponRenderer.enabled = false;
+            return;
+        }
+
+        // Si estamos ejecutando la animación de swing del ataque, el coroutine tiene el control
+        if (attackAnimRoutine != null)
+            return;
+
+        // Determinar sprite según arma
+        Sprite weaponSprite = currentWeapon == WeaponType.BigKnife ? knifeSprite : macheteSprite;
+        if (weaponSprite == null)
+        {
+            if (handWeaponRenderer.enabled) handWeaponRenderer.enabled = false;
+            return;
+        }
+
+        handWeaponRenderer.sprite = weaponSprite;
+        if (playerSprite != null)
+            handWeaponRenderer.sortingLayerID = playerSprite.sortingLayerID;
+
+        // Determinar dirección del personaje (0=Abajo, 1=Arriba, 2=Derecha, 3=Izquierda)
+        int dir = animator != null ? animator.GetInteger("Direction") : 0;
+        if (dir == 2 && playerSprite != null && playerSprite.flipX)
+            dir = 3;
+
+        // Escala del cuchillo: 0.38f para un tamaño proporcional y estilizado a la mano del jugador
+        float scale = currentWeapon == WeaponType.BigKnife ? 0.38f : 0.75f;
+        Vector3 handLocalPos;
+        Quaternion handLocalRot;
+        Vector3 handLocalScale;
+        int sortOrder;
+
+        switch (dir)
+        {
+            case 1: // Arriba (espalda a cámara: arma detrás del cuerpo)
+                handLocalPos = new Vector3(-0.16f, 0.28f, 0f);
+                handLocalRot = Quaternion.Euler(0f, 0f, 50f);
+                handLocalScale = new Vector3(scale, scale, 1f);
+                sortOrder = playerSprite != null ? playerSprite.sortingOrder - 1 : 460;
+                break;
+
+            case 2: // Derecha (mano adelantada)
+                handLocalPos = new Vector3(0.22f, 0.22f, 0f);
+                handLocalRot = Quaternion.Euler(0f, 0f, -30f);
+                handLocalScale = new Vector3(scale, scale, 1f);
+                sortOrder = playerSprite != null ? playerSprite.sortingOrder + 1 : 480;
+                break;
+
+            case 3: // Izquierda (mano adelantada)
+                handLocalPos = new Vector3(-0.22f, 0.22f, 0f);
+                handLocalRot = Quaternion.Euler(0f, 0f, 30f);
+                handLocalScale = new Vector3(-scale, scale, 1f);
+                sortOrder = playerSprite != null ? playerSprite.sortingOrder + 1 : 480;
+                break;
+
+            default: // 0: Abajo (frente a cámara)
+                handLocalPos = new Vector3(0.18f, 0.20f, 0f);
+                handLocalRot = Quaternion.Euler(0f, 0f, -40f);
+                handLocalScale = new Vector3(scale, scale, 1f);
+                sortOrder = playerSprite != null ? playerSprite.sortingOrder + 1 : 480;
+                break;
+        }
+
+        handWeaponObj.transform.localPosition = handLocalPos;
+        handWeaponObj.transform.localRotation = handLocalRot;
+        handWeaponObj.transform.localScale = handLocalScale;
+        handWeaponRenderer.sortingOrder = sortOrder;
+        if (!handWeaponRenderer.enabled) handWeaponRenderer.enabled = true;
     }
 
     private void UpdateFacingDirection()
@@ -260,7 +350,7 @@ public class PlayerWeaponController : MonoBehaviour
 
     private void HandleWeaponSwitchInput()
     {
-        // 1 = Farol (16 DMG), 2 = Cuchillo Grande (18 DMG), 3 = Machete (25 DMG)
+        // 1 = Farol (17 DMG), 2 = Cuchillo (26 DMG), 3 = Machete (35 DMG)
         if (Input.GetKeyDown(KeyCode.Alpha1) || Input.GetKeyDown(KeyCode.Keypad1))
         {
             if (hasLantern) EquipWeapon(WeaponType.Lantern);
@@ -274,7 +364,7 @@ public class PlayerWeaponController : MonoBehaviour
             else
             {
                 if (ParchmentMessageUI.Instance != null)
-                    ParchmentMessageUI.Instance.Show("ARMA BLOQUEADA", "Derrota la primera oleada de duendes para desbloquear el Cuchillo Grande.", null, null, true);
+                    ParchmentMessageUI.Instance.Show("ARMA BLOQUEADA", "Derrota la primera oleada de duendes para desbloquear el Cuchillo.", null, null, true);
             }
         }
         else if (Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.Keypad3))
@@ -411,6 +501,7 @@ public class PlayerWeaponController : MonoBehaviour
 
         currentWeapon = weapon;
         UpdateFarolHUD();
+        UpdateEquippedHandWeaponVisual();
         OnWeaponChanged?.Invoke(currentWeapon);
         Debug.Log($"[Armas] Equipada: {CurrentWeaponDisplayName}");
     }
@@ -453,13 +544,11 @@ public class PlayerWeaponController : MonoBehaviour
         {
             if (col == null || col.transform.IsChildOf(transform)) continue;
 
-            // Ignorar triggers puros de zonas, pero permitir enemigos cuyo cuerpo sea collider normal
             EnemyHealth enemyHealth = col.GetComponentInParent<EnemyHealth>();
             GoblinAI goblinAI = col.GetComponentInParent<GoblinAI>();
 
             if (enemyHealth == null && goblinAI != null)
             {
-                // Si el duende de la escena aún no tenía EnemyHealth, se lo agregamos al vuelo con 50 de vida
                 enemyHealth = goblinAI.gameObject.AddComponent<EnemyHealth>();
             }
 
@@ -545,7 +634,7 @@ public class PlayerWeaponController : MonoBehaviour
                 break;
         }
 
-        // Activar arma en mano
+        // Activar arma en mano con escala reducida para el cuchillo
         if (handWeaponRenderer != null && weaponSprite != null)
         {
             handWeaponRenderer.sprite = weaponSprite;
@@ -554,7 +643,7 @@ public class PlayerWeaponController : MonoBehaviour
                 ? (playerSprite != null ? playerSprite.sortingOrder - 1 : 460)
                 : (playerSprite != null ? playerSprite.sortingOrder + 1 : 480);
 
-            float weaponScale = currentWeapon == WeaponType.Machete ? 1.35f : 1.05f;
+            float weaponScale = currentWeapon == WeaponType.BigKnife ? 0.38f : 0.85f;
             handWeaponObj.transform.localScale = new Vector3(weaponScale, weaponScale, 1f);
             handWeaponRenderer.enabled = true;
         }
@@ -568,8 +657,8 @@ public class PlayerWeaponController : MonoBehaviour
             slashVisualObj.transform.position = origin + dir * (range * 0.52f);
             slashVisualObj.transform.rotation = Quaternion.Euler(0f, 0f, baseAngle);
 
-            float scaleMultiplier = currentWeapon == WeaponType.Machete ? 1.55f :
-                                    currentWeapon == WeaponType.BigKnife ? 1.25f : 0.85f;
+            float scaleMultiplier = currentWeapon == WeaponType.BigKnife ? 0.65f :
+                                    currentWeapon == WeaponType.Machete ? 1.30f : 0.85f;
             slashVisualObj.transform.localScale = new Vector3(scaleMultiplier, scaleMultiplier, 1f);
 
             Color slashColor = currentWeapon == WeaponType.Machete
@@ -634,10 +723,17 @@ public class PlayerWeaponController : MonoBehaviour
             yield return null;
         }
 
-        // 4. Restaurar estados
-        if (handWeaponRenderer != null) handWeaponRenderer.enabled = false;
+        // 4. Restaurar estados: el arma vuelve de inmediato a la mano
         if (slashRenderer != null) slashRenderer.enabled = false;
         if (restoreAnimator && animator != null) animator.enabled = true;
+        attackAnimRoutine = null;
+        UpdateEquippedHandWeaponVisual();
+    }
+
+    private void OnDisable()
+    {
+        if (handWeaponRenderer != null) handWeaponRenderer.enabled = false;
+        if (slashRenderer != null) slashRenderer.enabled = false;
     }
 
     private static Sprite GetOrCreateSlashSprite()
@@ -676,4 +772,3 @@ public class PlayerWeaponController : MonoBehaviour
         return slashSprite;
     }
 }
-
