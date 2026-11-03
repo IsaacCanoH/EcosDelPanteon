@@ -31,6 +31,7 @@ public class ToyEncounterZone : MonoBehaviour
     public event Action OnEncounterCleared;
 
     private bool triggered = false;
+    private bool bossDefeatSequenceStarted = false;
     private float currentSearchTimer = 0f;
     private bool isPlayerSearching = false;
     private Transform playerTransform;
@@ -47,7 +48,6 @@ public class ToyEncounterZone : MonoBehaviour
 
     private void Awake()
     {
-        // El juguete inicia oculto hasta que se derroten las oleadas de este encuentro
         if (targetToy != null)
         {
             targetToy.gameObject.SetActive(false);
@@ -74,14 +74,12 @@ public class ToyEncounterZone : MonoBehaviour
             waveManager.OnWaveStarted += HandleWaveStarted;
         }
 
-        // Asegurar que ToySearchUI esté disponible en la escena
         if (ToySearchUI.Instance == null)
         {
             GameObject uiObj = new GameObject("ToySearchUI");
             uiObj.AddComponent<ToySearchUI>();
         }
 
-        // Asegurar que Level2ClueSystem esté disponible en la escena
         if (Level2ClueSystem.Instance == null)
         {
             GameObject clueObj = new GameObject("Level2ClueSystem");
@@ -102,7 +100,6 @@ public class ToyEncounterZone : MonoBehaviour
     {
         if (triggered || IsAnyEncounterActive) return;
 
-        // Solo permitir interactuar con el encuentro que toca según el progreso
         if (encounterIndex != GlobalEncountersCompleted) return;
 
         if (playerTransform == null)
@@ -119,7 +116,6 @@ public class ToyEncounterZone : MonoBehaviour
         float dist = Vector2.Distance(transform.position, playerTransform.position);
         if (dist <= searchRadius)
         {
-            // El jugador está en rango de interacción
             bool holdingSearchKey = Input.GetKey(KeyCode.E) || Input.GetKeyDown(KeyCode.E) || GameControls.SearchHeld;
             bool centerAltarContact = dist <= 1.6f;
 
@@ -128,12 +124,10 @@ public class ToyEncounterZone : MonoBehaviour
                 isPlayerSearching = true;
                 currentSearchTimer += Time.deltaTime * (holdingSearchKey ? 1.0f : 1.4f);
 
-                // Evitar que el jugador resbale mientras busca si sostiene la tecla
                 if (holdingSearchKey && playerBody != null) playerBody.velocity = Vector2.zero;
 
                 if (currentSearchTimer >= searchDuration)
                 {
-                    // ¡Búsqueda completada! Iniciar cinemática y oleada
                     currentSearchTimer = 0f;
                     isPlayerSearching = false;
                     if (ToySearchUI.Instance != null) ToySearchUI.Instance.Hide();
@@ -182,7 +176,6 @@ public class ToyEncounterZone : MonoBehaviour
         triggered = true;
         IsAnyEncounterActive = true;
 
-        // Auto-configurar las oleadas y recompensas correspondientes al paso actual
         ConfigureWavesForStep(encounterIndex);
 
         OnEncounterTriggered?.Invoke();
@@ -200,9 +193,6 @@ public class ToyEncounterZone : MonoBehaviour
 
         if (step == 0)
         {
-            // Encuentro 1:
-            // Oleada 1: 3 duendes normales
-            // Oleada 2: 3 duendes normales + 1 duende gordito (4 enemigos)
             dropBigKnifeOnClear = true;
             waveManager.waves = new EncounterWaveManager.WaveDefinition[]
             {
@@ -213,9 +203,6 @@ public class ToyEncounterZone : MonoBehaviour
         }
         else if (step == 1)
         {
-            // Encuentro 2:
-            // Oleada 1: 3 duendes normales + 2 duendes gorditos (5 enemigos)
-            // Oleada 2: 4 duendes normales + 3 duendes gorditos (7 enemigos)
             dropBigKnifeOnClear = false;
             waveManager.waves = new EncounterWaveManager.WaveDefinition[]
             {
@@ -226,10 +213,6 @@ public class ToyEncounterZone : MonoBehaviour
         }
         else if (step == 2)
         {
-            // Encuentro 3: Gran Horda Masiva antes del Niño Espectral
-            // Oleada 1: 8 duendes normales + 4 duendes gorditos (12 enemigos)
-            // Oleada 2: 10 duendes normales + 6 duendes gorditos (16 enemigos)
-            // Total: 28 enemigos con alta intensidad (hasta 7 simultáneos)
             dropBigKnifeOnClear = false;
             waveManager.waves = new EncounterWaveManager.WaveDefinition[]
             {
@@ -242,13 +225,11 @@ public class ToyEncounterZone : MonoBehaviour
 
     private IEnumerator EncounterIntroRoutine()
     {
-        // 1. Asegurar que el juguete permanezca oculto durante el combate
         if (targetToy != null)
         {
             targetToy.gameObject.SetActive(false);
         }
 
-        // 2. Cinemática / aviso según el número de encuentro
         if (encounterIndex == 0)
         {
             var seq = GetComponent<LloronaCinematicSequence>();
@@ -279,7 +260,6 @@ public class ToyEncounterZone : MonoBehaviour
         }
         else if (encounterIndex == 2)
         {
-            // Encuentro 3: Sin campo de fuerza para que el jugador y el jefe se muevan por todo el mapa
             if (forceField != null)
             {
                 forceField.DeactivateBarrier();
@@ -299,7 +279,6 @@ public class ToyEncounterZone : MonoBehaviour
             yield return new WaitForSeconds(1.0f);
         }
 
-        // 3. Iniciar las oleadas de enemigos con teleportación
         if (waveManager != null)
         {
             waveManager.StartEncounter();
@@ -318,40 +297,37 @@ public class ToyEncounterZone : MonoBehaviour
     {
         if (GlobalEncountersCompleted < 2)
         {
-            // Encuentros 1 y 2: Reaparece el juguete purificado
             StartCoroutine(RestoreToyRoutine());
         }
         else
         {
-            // Encuentro 3: Tras vencer la horda de 10 enemigos, aparece el Niño Espectral
             StartCoroutine(SpawnBossRoutine());
         }
     }
 
     private IEnumerator RestoreToyRoutine()
     {
-        yield return new WaitForSeconds(0.6f);
+        yield return new WaitForSeconds(0.5f);
 
-        // 1. Reaparece el juguete purificado
+        Vector3 toyCenter = targetToy != null ? targetToy.transform.position : (transform.position + new Vector3(0f, 0.55f, 0f));
+
+        // 1. Reaparece el juguete purificado en el altar
         if (targetToy != null)
         {
             targetToy.gameObject.SetActive(true);
         }
 
-        // 2. Drop de arma si corresponde (Encuentro 1 = Cuchillo Grande)
-        if (dropBigKnifeOnClear)
+        // 2. En el primer juguete: aparece también el Cuchillo tirado al lado del juguete con su brillo y animación de recolección
+        if (dropBigKnifeOnClear || encounterIndex == 0)
         {
-            Vector3 dropPos = targetToy != null
-                ? targetToy.transform.position + Vector3.right * 0.9f
-                : transform.position + Vector3.right * 0.9f;
-
-            WeaponPickup.SpawnWeaponDrop(WeaponType.BigKnife, dropPos);
+            Vector3 knifeDropPos = toyCenter + new Vector3(0.82f, 0f, 0f);
+            WeaponPickup.SpawnWeaponDrop(WeaponType.BigKnife, knifeDropPos);
 
             if (ParchmentMessageUI.Instance != null)
             {
                 ParchmentMessageUI.Instance.Show(
-                    "CUCHILLO DESBLOQUEADO",
-                    "Has derrotado a los soldados de La Llorona.\nRecoge el Cuchillo y el primer juguete del altar.\nPulsa 1: Farol (17 DMG) o 2: Cuchillo (26 DMG).",
+                    "CUCHILLO Y JUGUETE REVELADOS",
+                    "Has derrotado a los soldados de La Llorona.\nRecoge el primer juguete y el Cuchillo junto a él en el altar.\nPulsa 1: Farol (17 DMG) o 2: Cuchillo (28 DMG).",
                     null,
                     null,
                     true
@@ -379,11 +355,12 @@ public class ToyEncounterZone : MonoBehaviour
 
     private IEnumerator SpawnBossRoutine()
     {
-        Vector3 spawnPos = bossSpawnPoint != null
-            ? bossSpawnPoint.position
-            : (targetToy != null ? targetToy.transform.position : transform.position);
+        // Aparecer en el centro despejado del Altar 3 (nunca abajo cerca de las tumbas)
+        Vector3 altarCenter = targetToy != null
+            ? targetToy.transform.position
+            : transform.position + new Vector3(0f, 0.65f, 0f);
+        Vector3 spawnPos = altarCenter + new Vector3(0f, 0.45f, 0f);
 
-        // Diálogo del Niño Espectral en pergamino antiguo con pausa
         bool bossParchmentDone = false;
         if (ParchmentMessageUI.Instance != null)
         {
@@ -405,7 +382,7 @@ public class ToyEncounterZone : MonoBehaviour
             yield return new WaitForSeconds(1.5f);
         }
 
-        yield return new WaitForSeconds(0.35f);
+        yield return new WaitForSeconds(0.25f);
 
         GameObject bossInstance = null;
         if (bossPrefab != null)
@@ -433,12 +410,11 @@ public class ToyEncounterZone : MonoBehaviour
             }
         }
 
-        // Asegurar componentes esenciales del Jefe
         EnemyHealth bossHealth = bossInstance.GetComponent<EnemyHealth>();
         if (bossHealth == null) bossHealth = bossInstance.AddComponent<EnemyHealth>();
         bossHealth.variant = EnemyHealth.EnemyVariant.SpectralChildBoss;
-        bossHealth.maxHealth = 180;
-        bossHealth.currentHealth = 180;
+        bossHealth.maxHealth = 250;
+        bossHealth.currentHealth = 250;
 
         SpectralChildBossAI bossAI = bossInstance.GetComponent<SpectralChildBossAI>();
         if (bossAI == null) bossAI = bossInstance.AddComponent<SpectralChildBossAI>();
@@ -450,44 +426,83 @@ public class ToyEncounterZone : MonoBehaviour
             Destroy(oldAi);
         }
 
-        bossHealth.OnDied += HandleBossDefeated;
+        bossHealth.OnDied += _ =>
+        {
+            if (!bossDefeatSequenceStarted)
+            {
+                bossDefeatSequenceStarted = true;
+                StartCoroutine(BossDefeatedCinematicRoutine(bossAI));
+            }
+        };
     }
 
-    private void HandleBossDefeated(EnemyHealth _)
+    private IEnumerator BossDefeatedCinematicRoutine(SpectralChildBossAI bossAI)
     {
-        // 1. Desactivar campo de fuerza de la arena
         if (forceField != null)
         {
             forceField.DeactivateBarrier();
         }
 
-        // 2. Reaparecer el tercer juguete para que el jugador lo recoja
+        // Pausar movimiento del jugador para observar la cinemática donde el Niño Espectral desaparece lentamente
+        Cainos.PixelArtTopDown_Basic.TopDownCharacterController playerController = null;
+        Animator playerAnim = null;
+        if (playerTransform != null)
+        {
+            playerController = playerTransform.GetComponent<Cainos.PixelArtTopDown_Basic.TopDownCharacterController>();
+            playerAnim = playerTransform.GetComponent<Animator>();
+            if (playerController != null) playerController.enabled = false;
+            if (playerBody != null) playerBody.velocity = Vector2.zero;
+            if (playerAnim != null) playerAnim.SetBool("IsMoving", false);
+        }
+
+        bool bossFinishedVanishing = false;
+        if (bossAI != null)
+        {
+            bossAI.OnDeathCinematicFinished += _ => { bossFinishedVanishing = true; };
+        }
+        else
+        {
+            bossFinishedVanishing = true;
+        }
+
+        // Esperar a que termine la animación lenta de desaparición (máximo 2.6s de respaldo)
+        float waitTimer = 0f;
+        while (!bossFinishedVanishing && bossAI != null && waitTimer < 2.6f)
+        {
+            waitTimer += Time.unscaledDeltaTime > 0f ? Time.unscaledDeltaTime : 0.016f;
+            yield return null;
+        }
+
+        yield return new WaitForSecondsRealtime(0.2f);
+
+        // Restaurar el control del jugador
+        if (playerController != null) playerController.enabled = true;
+
+        // Aparecer el último juguete en el altar y a su lado el Machete y el Orbe de Vida Completa
+        Vector3 toyCenter = targetToy != null ? targetToy.transform.position : (transform.position + new Vector3(0f, 0.55f, 0f));
         if (targetToy != null)
         {
             targetToy.gameObject.SetActive(true);
         }
 
-        // 3. Drop de Machete (25 DMG) y Poción de Vida Completa
-        Vector3 dropPos = targetToy != null
-            ? targetToy.transform.position + Vector3.right * 1.1f
-            : transform.position + Vector3.right * 1.1f;
+        WeaponPickup.SpawnWeaponDrop(WeaponType.Machete, toyCenter + new Vector3(0.85f, 0f, 0f));
+        HealthPickup.SpawnDrop(toyCenter + new Vector3(-0.85f, 0f, 0f), HealthPickup.HealMode.FullHealth);
 
-        WeaponPickup.SpawnWeaponDrop(WeaponType.Machete, dropPos);
+        GlobalEncountersCompleted++;
+        IsAnyEncounterActive = false;
+        OnEncounterCleared?.Invoke();
 
+        // Mostrar el diálogo de derrota del Niño Espectral después de que desapareció lentamente
         if (ParchmentMessageUI.Instance != null)
         {
             ParchmentMessageUI.Instance.Show(
-                "¡JEFE DERROTADO!",
-                "Has vencido al Niño Espectral.\nRecoge el Machete (25 DMG) y la Poción de Vida del suelo.\nRecupera el último juguete para desbloquear la salida del panteón.",
+                "¡NIÑO ESPECTRAL DERROTADO!",
+                "El espíritu del Niño Espectral se ha desvanecido.\nRecoge el último juguete y el Machete (50 DMG) en el altar para abrir la puerta derecha y escapar del panteón.",
                 null,
                 null,
                 true
             );
         }
-
-        GlobalEncountersCompleted++;
-        IsAnyEncounterActive = false;
-        OnEncounterCleared?.Invoke();
     }
 
     private void OnDrawGizmos()

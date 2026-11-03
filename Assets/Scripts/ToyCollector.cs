@@ -10,7 +10,10 @@ public sealed class ToyCollector : MonoBehaviour
     public int Count { get; private set; }
     public event Action<int> Changed;
 
-    public bool HasToy(int id) { return id >= 0 && id < RequiredToys && (collectedMask & (1 << id)) != 0; }
+    public bool HasToy(int id)
+    {
+        return id >= 0 && id < RequiredToys && (collectedMask & (1 << id)) != 0;
+    }
 
     public bool Collect(int id)
     {
@@ -19,20 +22,32 @@ public sealed class ToyCollector : MonoBehaviour
         Count++;
         if (pickupAudio != null && pickupSound != null) pickupAudio.PlayOneShot(pickupSound);
 
-        var weapons = GetComponent<PlayerWeaponController>();
-        if (weapons != null)
+        // Respaldo: al obtener el primer juguete, asegurar que el Cuchillo esté tirado al lado con su animación de recolección
+        if (Count == 1)
         {
-            if (Count >= 1 && !weapons.hasBigKnife) weapons.UnlockAndEquip(WeaponType.BigKnife);
-            if (Count >= 3 && !weapons.hasMachete) weapons.UnlockAndEquip(WeaponType.Machete);
+            var weapons = GetComponent<PlayerWeaponController>();
+            if (weapons != null && !weapons.hasBigKnife && !WeaponPickup.IsWeaponDropActive(WeaponType.BigKnife))
+            {
+                WeaponPickup.SpawnWeaponDrop(WeaponType.BigKnife, transform.position + new Vector3(0.82f, 0f, 0f));
+            }
         }
 
         Changed?.Invoke(Count);
+
+        if (Level2VictoryManager.Instance != null)
+        {
+            Level2VictoryManager.Instance.CheckVictoryConditions();
+        }
+
         return true;
     }
 
     private void Awake()
     {
         Count = 0;
-        for (int i = 0; i < RequiredToys; i++) if (HasToy(i)) Count++;
+        for (int i = 0; i < RequiredToys; i++)
+        {
+            if (HasToy(i)) Count++;
+        }
     }
 }

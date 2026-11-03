@@ -1,8 +1,11 @@
 using System;
 using System.Collections;
+using System.Collections.Generic;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
+using UnityEngine.Tilemaps;
 using UnityEngine.UI;
 
 public class Level2VictoryManager : MonoBehaviour
@@ -10,24 +13,70 @@ public class Level2VictoryManager : MonoBehaviour
     public static Level2VictoryManager Instance { get; private set; }
 
     [Header("Escenas de Destino")]
-    public string nextSceneName = "MenuPrincipal"; // Si existe un Nivel 3 futuro se puede configurar aquí
-    public string menuSceneName = "MenuPrincipal";
+    public string nextSceneName = "Cementerio_Nivel3";
+    public string fallbackMenuSceneName = "MenuPrincipal";
 
     [Header("Audio")]
     public AudioClip victoryFanfare;
+    public AudioClip gateOpenClip;
 
-    [Header("UI Procedural / Referencias")]
-    public CanvasGroup victoryCanvasGroup;
+    [Header("UI estilo Nivel 1 (CartaAntigua_Sello)")]
+    public CanvasGroup screenCanvasGroup;
+    public CanvasGroup cardCanvasGroup;
+    public Image blackoutImage;
+    public RectTransform cardRect;
+    public Image cardBackground;
     public TMP_Text victoryTitleText;
-    public TMP_Text victorySubtitleText;
-    public TMP_Text victoryDescriptionText;
-    public Button continueButton;
+    public TMP_Text victoryBodyText;
+    public TMP_Text victoryHintText;
+    public GameObject buttonRowObj;
+    public VictoryCelebration victoryCelebration;
+
+    public Button nextLevelButton;
     public Button retryButton;
     public Button menuButton;
+    public Button quitButton;
+
+    private RectTransform nextBtnRt;
+    private RectTransform retryBtnRt;
+    private RectTransform menuBtnRt;
+    private RectTransform quitBtnRt;
+
+    private Image nextBtnImg;
+    private Image retryBtnImg;
+    private Image menuBtnImg;
+    private Image quitBtnImg;
+
+    // Colores exactos de los botones de la tarjeta de Victoria del Nivel 1 (Imagen 3)
+    private readonly Color primaryBtnNormal = new Color32(118, 104, 67, 255);   // #766843 oliva dorado
+    private readonly Color primaryBtnHover = new Color32(146, 130, 86, 255);
+    private readonly Color secondaryBtnNormal = new Color32(74, 66, 49, 255);   // #4A4231 café oscuro panteón
+    private readonly Color secondaryBtnHover = new Color32(102, 91, 68, 255);
 
     private bool victoryTriggered = false;
-    private Cainos.PixelArtTopDown_Basic.Level2CharacterController playerController;
+    private bool victoryCardInteractive = false;
+    private bool actionInProgress = false;
+
+    private GameObject playerObj;
+    private ToyCollector toyCollector;
     private PlayerWeaponController playerWeapons;
+
+    // Puerta derecha de salida (Acceso este), simétrica a Acceso oeste (Imagen 1)
+    private GameObject eastGateRoot;
+    private SpriteRenderer northLeafRenderer;
+    private SpriteRenderer southLeafRenderer;
+    private BoxCollider2D closedGateBlocker;
+    private Sprite[] northGateFrames;
+    private Sprite[] southGateFrames;
+
+    // Coordenadas exactas simétricas a Acceso oeste (que está en X = -21.85, Y = -3.15 a -6.75)
+    public const float EastPillarX = 21.85f;
+    public const float EastLeafX = 21.52f;
+    public const float NorthPillarY = -3.15f;
+    public const float SouthPillarY = -6.75f;
+    public const float NorthLeafY = -3.05f;
+    public const float SouthLeafY = -6.68f;
+    public const float GateCenterY = -4.85f;
 
     private void Awake()
     {
@@ -38,26 +87,54 @@ public class Level2VictoryManager : MonoBehaviour
         }
         Instance = this;
 
-        if (victoryCanvasGroup == null)
-        {
-            SetupProceduralUIIfMissing();
-        }
-
+        SetupProceduralUIIfMissing();
         HideImmediate();
     }
 
     private void Start()
     {
-        var player = GameObject.FindGameObjectWithTag("Player");
-        if (player != null)
+        FindPlayerReferences();
+        BuildEastExitGateIfMissing();
+    }
+
+    private void FindPlayerReferences()
+    {
+        if (playerObj == null)
+            playerObj = GameObject.FindGameObjectWithTag("Player");
+
+        if (playerObj != null)
         {
-            playerController = player.GetComponent<Cainos.PixelArtTopDown_Basic.Level2CharacterController>();
-            playerWeapons = player.GetComponent<PlayerWeaponController>();
+            if (toyCollector == null) toyCollector = playerObj.GetComponent<ToyCollector>();
+            if (playerWeapons == null) playerWeapons = playerObj.GetComponent<PlayerWeaponController>();
+        }
+    }
+
+    private void Update()
+    {
+        if (!victoryTriggered)
+        {
+            CheckVictoryConditions();
+            return;
         }
 
-        if (continueButton != null) continueButton.onClick.AddListener(OnContinueClicked);
-        if (retryButton != null) retryButton.onClick.AddListener(OnRetryClicked);
-        if (menuButton != null) menuButton.onClick.AddListener(OnMenuClicked);
+        if (victoryCardInteractive && !actionInProgress)
+        {
+            HandleDirectVictoryButtonsInput();
+        }
+    }
+
+    public void CheckVictoryConditions()
+    {
+        if (victoryTriggered) return;
+
+        FindPlayerReferences();
+        if (toyCollector == null || playerWeapons == null) return;
+
+        // La secuencia final inicia justo al recoger el 3er juguete Y el machete
+        if (toyCollector.Count >= 3 && playerWeapons.hasMachete)
+        {
+            TriggerVictorySequence();
+        }
     }
 
     public void TriggerVictorySequence()
@@ -65,102 +142,850 @@ public class Level2VictoryManager : MonoBehaviour
         if (victoryTriggered) return;
         victoryTriggered = true;
 
-        StartCoroutine(VictorySequenceRoutine());
+        StartCoroutine(Level2EndingSequenceRoutine());
     }
 
-    private IEnumerator VictorySequenceRoutine()
-    {
-        // 1. Bloquear controles del jugador
-        if (playerController != null)
-        {
-            playerController.enabled = false;
-            var rb = playerController.GetComponent<Rigidbody2D>();
-            if (rb != null) rb.velocity = Vector2.zero;
-        }
-        if (playerWeapons != null) playerWeapons.enabled = false;
+    #region Construcción de la Puerta Derecha (Acceso este) idéntica a la Izquierda (Imagen 1) pero Cerrada
 
-        // 2. Reproducir fanfarria si está disponible
-        if (victoryFanfare != null)
+    public void BuildEastExitGateIfMissing()
+    {
+        if (eastGateRoot != null) return;
+
+        // Limpiar cualquier versión previa si existiera
+        GameObject oldGate = GameObject.Find("Acceso_Este_Salida");
+        if (oldGate != null) Destroy(oldGate);
+
+        eastGateRoot = new GameObject("Acceso_Este_Salida");
+        eastGateRoot.transform.position = Vector3.zero;
+
+        // 1. Despejar tumbas o ataúdes que obstruyan la entrada de la puerta derecha (X >= 16.5, Y entre -7.2 y -2.5)
+        ClearPropsInFrontOfEastGate();
+
+        // 2. Abrir el hueco en el Tilemap del muro derecho (Layer 1 - Wall) y pintar el camino de piedra (Layer 1 - Stone Ground)
+        CarveEastWallAndPaintStonePath();
+
+        // 3. Tomar referencias visuales exactas de "Acceso oeste" (pilares, hojas de madera, arbustos, material y tinte nocturno)
+        GameObject accesoOeste = GameObject.Find("Acceso oeste");
+        Transform westPillarTemplate = null;
+        Transform westBushTemplate = null;
+        Sprite westNorthLeafSprite = null;
+        Sprite westSouthLeafSprite = null;
+        Material propsMat = null;
+        int sortingLayerID = SortingLayer.NameToID("Layer 1");
+        Color nightTint = new Color(0.6117647f, 0.6666667f, 0.78431374f, 1f);
+
+        if (accesoOeste != null)
+        {
+            for (int i = 0; i < accesoOeste.transform.childCount; i++)
+            {
+                Transform ch = accesoOeste.transform.GetChild(i);
+                if (ch.name.Contains("Pillar") && westPillarTemplate == null)
+                {
+                    westPillarTemplate = ch;
+                    SpriteRenderer sr = ch.GetComponentInChildren<SpriteRenderer>();
+                    if (sr != null)
+                    {
+                        propsMat = sr.sharedMaterial;
+                        sortingLayerID = sr.sortingLayerID;
+                        nightTint = sr.color;
+                    }
+                }
+                else if (ch.name.Contains("Bush") && westBushTemplate == null)
+                {
+                    westBushTemplate = ch;
+                }
+                else if (ch.name == "Puerta Lateral - Hoja Norte")
+                {
+                    var sr = ch.GetComponent<SpriteRenderer>();
+                    if (sr != null) westNorthLeafSprite = sr.sprite;
+                }
+                else if (ch.name == "Puerta Lateral - Hoja Sur")
+                {
+                    var sr = ch.GetComponent<SpriteRenderer>();
+                    if (sr != null) westSouthLeafSprite = sr.sprite;
+                }
+            }
+        }
+
+#if UNITY_EDITOR
+        if (westNorthLeafSprite == null)
+            westNorthLeafSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Cainos/Pixel Art Top Down - Basic/Texture/TX Puerta Lateral Hoja.png");
+        if (westSouthLeafSprite == null)
+            westSouthLeafSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Cainos/Pixel Art Top Down - Basic/Texture/TX Puerta Lateral Hoja Sur.png");
+        if (westPillarTemplate == null)
+        {
+            GameObject pPf = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Cainos/Pixel Art Top Down - Basic/Prefab/Props/PF Props - Pillar 01.prefab");
+            if (pPf != null) westPillarTemplate = pPf.transform;
+        }
+#endif
+
+        // 4. Instanciar los 2 Pilares de Piedra pegados al muro derecho (X = 21.85), idénticos a los de la izquierda
+        if (westPillarTemplate != null)
+        {
+            GameObject topPillar = Instantiate(westPillarTemplate.gameObject, eastGateRoot.transform);
+            topPillar.name = "Pilar Este - Norte";
+            topPillar.transform.position = new Vector3(EastPillarX, NorthPillarY, 0f);
+            topPillar.transform.localScale = new Vector3(0.85f, 0.85f, 1f);
+            foreach (var sr in topPillar.GetComponentsInChildren<SpriteRenderer>(true))
+            {
+                sr.sortingLayerName = "Layer 1";
+                sr.sortingOrder = sr.name.Contains("Shadow") ? 1 : 2;
+            }
+
+            GameObject bottomPillar = Instantiate(westPillarTemplate.gameObject, eastGateRoot.transform);
+            bottomPillar.name = "Pilar Este - Sur";
+            bottomPillar.transform.position = new Vector3(EastPillarX, SouthPillarY, 0f);
+            bottomPillar.transform.localScale = new Vector3(0.85f, 0.85f, 1f);
+            foreach (var sr in bottomPillar.GetComponentsInChildren<SpriteRenderer>(true))
+            {
+                sr.sortingLayerName = "Layer 1";
+                sr.sortingOrder = sr.name.Contains("Shadow") ? 1 : 3;
+            }
+        }
+
+        // 5. Instanciar los arbustos decorativos simétricos a los de la puerta izquierda
+        if (westBushTemplate != null)
+        {
+            Vector3[] bushPositions = new Vector3[]
+            {
+                new Vector3(19.4f, -2.55f, 0f),
+                new Vector3(17.9f, -2.65f, 0f),
+                new Vector3(19.4f, -6.95f, 0f),
+                new Vector3(17.9f, -6.95f, 0f)
+            };
+            for (int i = 0; i < bushPositions.Length; i++)
+            {
+                GameObject b = Instantiate(westBushTemplate.gameObject, eastGateRoot.transform);
+                b.name = $"Bush Este {i + 1}";
+                b.transform.position = bushPositions[i];
+                foreach (var sr in b.GetComponentsInChildren<SpriteRenderer>(true))
+                {
+                    sr.sortingLayerName = "Layer 1";
+                    sr.sortingOrder = sr.name.Contains("Shadow") ? 1 : 2;
+                }
+            }
+        }
+
+        // 6. Generar los 10 frames 2.5D de apertura a partir de las texturas reales TX Puerta Lateral Hoja y TX Puerta Lateral Hoja Sur
+        //    Frame 0 = Puerta cerrada sobre el muro derecho (uniéndose en el centro entre ambos pilares)
+        //    Frame 9 = Puerta completamente abierta hacia la izquierda (espejo exacto de la Imagen 1)
+        GenerateEastGateAnimationFrames(westNorthLeafSprite, westSouthLeafSprite, out northGateFrames, out southGateFrames);
+
+        GameObject northLeafObj = new GameObject("Puerta Este - Hoja Norte");
+        northLeafObj.transform.SetParent(eastGateRoot.transform, false);
+        northLeafObj.transform.position = new Vector3(EastLeafX, NorthLeafY, 0f);
+        northLeafObj.transform.localScale = new Vector3(1.18f, 1.22f, 1f);
+        northLeafRenderer = northLeafObj.AddComponent<SpriteRenderer>();
+        northLeafRenderer.sprite = northGateFrames[0]; // Inicia cerrada
+        if (propsMat != null) northLeafRenderer.sharedMaterial = propsMat;
+        northLeafRenderer.sortingLayerID = sortingLayerID;
+        northLeafRenderer.sortingOrder = 2;
+        northLeafRenderer.color = nightTint;
+
+        GameObject southLeafObj = new GameObject("Puerta Este - Hoja Sur");
+        southLeafObj.transform.SetParent(eastGateRoot.transform, false);
+        southLeafObj.transform.position = new Vector3(EastLeafX, SouthLeafY, 0f);
+        southLeafObj.transform.localScale = new Vector3(1.18f, 1.22f, 1f);
+        southLeafRenderer = southLeafObj.AddComponent<SpriteRenderer>();
+        southLeafRenderer.sprite = southGateFrames[0]; // Inicia cerrada
+        if (propsMat != null) southLeafRenderer.sharedMaterial = propsMat;
+        southLeafRenderer.sortingLayerID = sortingLayerID;
+        southLeafRenderer.sortingOrder = 3;
+        southLeafRenderer.color = nightTint;
+
+        // 7. Colisionador físico sólido que mantiene cerrada la puerta durante el nivel
+        int obstaclesLayer = LayerMask.NameToLayer("Obstacles");
+        eastGateRoot.layer = obstaclesLayer >= 0 ? obstaclesLayer : 6;
+        closedGateBlocker = eastGateRoot.AddComponent<BoxCollider2D>();
+        closedGateBlocker.isTrigger = false;
+        closedGateBlocker.offset = new Vector2(EastLeafX, GateCenterY);
+        closedGateBlocker.size = new Vector2(1.1f, 3.8f);
+    }
+
+    private void ClearPropsInFrontOfEastGate()
+    {
+        GameObject sceneRoot = GameObject.Find("SCENE");
+        if (sceneRoot == null) return;
+
+        foreach (Transform t in sceneRoot.GetComponentsInChildren<Transform>(true))
+        {
+            if (t == null || t == sceneRoot.transform) continue;
+            if (t.parent != sceneRoot.transform && t.parent.name != "Props") continue;
+            if (t.name.Contains("Barda") || t.name.Contains("Acceso")) continue;
+
+            Vector3 pos = t.position;
+            // Desactivar lápidas, ataúdes o arbustos sueltos que tapen el pasillo hacia la puerta derecha
+            if (pos.x >= 16.2f && pos.x <= 22.5f && pos.y >= -7.3f && pos.y <= -2.4f)
+            {
+                t.gameObject.SetActive(false);
+            }
+        }
+    }
+
+    private void CarveEastWallAndPaintStonePath()
+    {
+        // 1. Abrir el pórtico en el muro derecho (Layer 1 - Wall y Layer 1 - Wall Shadow) igual que en Acceso oeste
+        GameObject wallObj = GameObject.Find("Layer 1 - Wall");
+        if (wallObj != null)
+        {
+            Tilemap wallTm = wallObj.GetComponent<Tilemap>();
+            if (wallTm != null)
+            {
+                for (int cx = 20; cx <= 23; cx++)
+                {
+                    for (int cy = -6; cy <= -4; cy++)
+                    {
+                        wallTm.SetTile(new Vector3Int(cx, cy, 0), null);
+                    }
+                }
+            }
+        }
+
+        GameObject shadowObj = GameObject.Find("Layer 1 - Wall Shadow");
+        if (shadowObj != null)
+        {
+            Tilemap shadowTm = shadowObj.GetComponent<Tilemap>();
+            if (shadowTm != null)
+            {
+                for (int cx = 19; cx <= 23; cx++)
+                {
+                    for (int cy = -6; cy <= -4; cy++)
+                    {
+                        shadowTm.SetTile(new Vector3Int(cx, cy, 0), null);
+                    }
+                }
+            }
+        }
+
+        // 2. Pintar el camino de losetas de piedra (Layer 1 - Stone Ground) hasta la puerta derecha igual que en la izquierda
+        GameObject stoneObj = GameObject.Find("Layer 1 - Stone Ground");
+        if (stoneObj != null)
+        {
+            Tilemap stoneTm = stoneObj.GetComponent<Tilemap>();
+            if (stoneTm != null)
+            {
+                // Tomar las losetas de muestra del camino de la puerta izquierda (-18, -4 / -5 / -6)
+                TileBase topRowTile = stoneTm.GetTile(new Vector3Int(-18, -4, 0));
+                TileBase midRowTile = stoneTm.GetTile(new Vector3Int(-18, -5, 0));
+                TileBase botRowTile = stoneTm.GetTile(new Vector3Int(-18, -6, 0));
+
+                if (midRowTile == null)
+                {
+                    // Buscar cualquier loseta de piedra existente cerca del pasillo
+                    for (int sx = -15; sx <= 15 && midRowTile == null; sx++)
+                        for (int sy = -6; sy <= -4 && midRowTile == null; sy++)
+                            midRowTile = stoneTm.GetTile(new Vector3Int(sx, sy, 0));
+                }
+                if (topRowTile == null) topRowTile = midRowTile;
+                if (botRowTile == null) botRowTile = midRowTile;
+
+                if (midRowTile != null)
+                {
+                    for (int cx = 13; cx <= 22; cx++)
+                    {
+                        stoneTm.SetTile(new Vector3Int(cx, -4, 0), topRowTile);
+                        stoneTm.SetTile(new Vector3Int(cx, -5, 0), midRowTile);
+                        stoneTm.SetTile(new Vector3Int(cx, -6, 0), botRowTile);
+                    }
+                }
+            }
+        }
+    }
+
+    /// <summary>
+    /// Toma las texturas originales de las dos hojas de la puerta lateral (Imagen 1) y genera 10 frames en perspectiva 2.5D:
+    /// desde CERRADA en el muro derecho (frame 0) hasta ABIERTA hacia adentro (frame 9, espejo exacto de Imagen 1).
+    /// </summary>
+    private static void GenerateEastGateAnimationFrames(
+        Sprite westNorthSprite,
+        Sprite westSouthSprite,
+        out Sprite[] eastNorthFrames,
+        out Sprite[] eastSouthFrames)
+    {
+        int frameCount = 10;
+        eastNorthFrames = new Sprite[frameCount];
+        eastSouthFrames = new Sprite[frameCount];
+
+        Color32[] northSrcPixels = ExtractSpritePixels(westNorthSprite, out int nw, out int nh);
+        Color32[] southSrcPixels = ExtractSpritePixels(westSouthSprite, out int sw, out int sh);
+
+        for (int f = 0; f < frameCount; f++)
+        {
+            float t = f / (float)(frameCount - 1); // 0 = Cerrada en el muro derecho, 1 = Abierta igual a Imagen 1
+            eastNorthFrames[f] = Create25DPerspectiveGateLeafFrame(northSrcPixels, nw, nh, t, true);
+            eastSouthFrames[f] = Create25DPerspectiveGateLeafFrame(southSrcPixels, sw, sh, t, false);
+        }
+    }
+
+    private static Color32[] ExtractSpritePixels(Sprite sprite, out int width, out int height)
+    {
+        if (sprite == null || sprite.texture == null)
+        {
+            width = 92;
+            height = 60;
+            return new Color32[width * height];
+        }
+
+        Texture2D srcTex = sprite.texture;
+        width = srcTex.width;
+        height = srcTex.height;
+
+        RenderTexture rt = RenderTexture.GetTemporary(width, height, 0, RenderTextureFormat.ARGB32, RenderTextureReadWrite.Default);
+        RenderTexture prev = RenderTexture.active;
+        Graphics.Blit(srcTex, rt);
+        RenderTexture.active = rt;
+
+        Texture2D readable = new Texture2D(width, height, TextureFormat.RGBA32, false);
+        readable.ReadPixels(new Rect(0, 0, width, height), 0, 0);
+        readable.Apply();
+
+        RenderTexture.active = prev;
+        RenderTexture.ReleaseTemporary(rt);
+
+        Color32[] pixels = readable.GetPixels32();
+        Destroy(readable);
+        return pixels;
+    }
+
+    private static Sprite Create25DPerspectiveGateLeafFrame(
+        Color32[] srcPixels,
+        int srcW,
+        int srcH,
+        float openProgress,
+        bool isNorthLeaf)
+    {
+        // En el sprite original (92x60, PPU 32, pivot (0, 0.14)):
+        // x = 0 es la bisagra pegada al pilar; x = 79 es el extremo libre de la hoja.
+        // Para el muro derecho, la bisagra está a la derecha (x = dstW - 1) y la hoja se extiende hacia la izquierda.
+        // Cuando openProgress = 1 (ABIERTA): es el espejo horizontal exacto del sprite de la Imagen 1.
+        // Cuando openProgress = 0 (CERRADA): las dos hojas bajan/suben por la línea del muro derecho uniéndose al centro.
+        int padY = 44;
+        int dstW = srcW;
+        int dstH = srcH + padY * 2;
+
+        Texture2D dstTex = new Texture2D(dstW, dstH, TextureFormat.RGBA32, false);
+        dstTex.filterMode = FilterMode.Point;
+        dstTex.wrapMode = TextureWrapMode.Clamp;
+
+        Color32[] dstPixels = new Color32[dstW * dstH];
+
+        // Ángulo de apertura en el plano del suelo:
+        // En t=0 (cerrada): 14° respecto al muro vertical para que se aprecien los tablones, herrajes negros y picos en 2.5D.
+        // En t=1 (abierta): 90° (completamente abierta hacia adentro, idéntica a la Imagen 1).
+        float angleDeg = Mathf.Lerp(14f, 90f, openProgress);
+        float rad = angleDeg * Mathf.Deg2Rad;
+
+        float horizFactor = Mathf.Sin(rad); // 0.24 (cerrada) -> 1.00 (abierta)
+        float vertFactor = Mathf.Cos(rad);  // 0.97 (cerrada) -> 0.00 (abierta)
+
+        // Desplazamiento vertical máximo en píxeles desde la bisagra hasta el centro de la puerta cuando está cerrada
+        // (Compensa la inclinación original del sprite para que ambas hojas se toquen exactamente en Y = -4.85)
+        float closedTipDeltaY = isNorthLeaf ? -36f : 34f;
+
+        int maxReachPx = Mathf.Max(1, Mathf.RoundToInt((srcW - 1) * horizFactor));
+
+        for (int dx = 0; dx <= maxReachPx; dx++)
+        {
+            // Columna destino medida desde la bisagra derecha (dstW - 1) hacia la izquierda
+            int dstX = (dstW - 1) - dx;
+            if (dstX < 0 || dstX >= dstW) continue;
+
+            // Muestrear la columna correspondiente del sprite original (sin dejar huecos)
+            float u = dx / (float)maxReachPx;
+            int srcX = Mathf.Clamp(Mathf.RoundToInt(u * (srcW - 1)), 0, srcW - 1);
+
+            int shiftY = Mathf.RoundToInt(u * closedTipDeltaY * vertFactor);
+
+            for (int srcY = 0; srcY < srcH; srcY++)
+            {
+                Color32 c = srcPixels[srcY * srcW + srcX];
+                if (c.a == 0) continue;
+
+                int dstY = srcY + padY + shiftY;
+                if (dstY >= 0 && dstY < dstH)
+                {
+                    dstPixels[dstY * dstW + dstX] = c;
+                }
+            }
+        }
+
+        dstTex.SetPixels32(dstPixels);
+        dstTex.Apply();
+
+        // El pivote se mantiene exactamente en la bisagra derecha (x = 1.0) y en la altura original (0.14 de srcH + padY)
+        float pivotY = (padY + srcH * 0.14f) / dstH;
+        return Sprite.Create(dstTex, new Rect(0, 0, dstW, dstH), new Vector2(1f, pivotY), 32f);
+    }
+
+    #endregion
+
+    #region Cinemática Final y Secuencia de Victoria idéntica al Nivel 1 (Imagen 3)
+
+    private IEnumerator Level2EndingSequenceRoutine()
+    {
+        BuildEastExitGateIfMissing();
+        FindPlayerReferences();
+
+        // 1. Esperar si hay algún pergamino abierto (ej. mensaje de derrota del Niño Espectral)
+        while (ParchmentMessageUI.Instance != null && ParchmentMessageUI.Instance.IsOpen)
+        {
+            yield return null;
+        }
+
+        yield return new WaitForSecondsRealtime(0.1f);
+
+        // 2. Bloquear controles del jugador y ocultar HUD de combate (igual que LockGameplay en LevelOneEnding)
+        Cainos.PixelArtTopDown_Basic.TopDownCharacterController topDownCtrl = null;
+        Cainos.PixelArtTopDown_Basic.Level2CharacterController lvl2Ctrl = null;
+        Rigidbody2D playerRb = null;
+        Collider2D playerCol = null;
+        Animator playerAnim = null;
+        SpriteRenderer playerSr = null;
+
+        if (playerObj != null)
+        {
+            topDownCtrl = playerObj.GetComponent<Cainos.PixelArtTopDown_Basic.TopDownCharacterController>();
+            lvl2Ctrl = playerObj.GetComponent<Cainos.PixelArtTopDown_Basic.Level2CharacterController>();
+            playerRb = playerObj.GetComponent<Rigidbody2D>();
+            playerCol = playerObj.GetComponent<Collider2D>();
+            playerAnim = playerObj.GetComponent<Animator>();
+            playerSr = playerObj.GetComponent<SpriteRenderer>();
+
+            if (topDownCtrl != null) topDownCtrl.enabled = false;
+            if (lvl2Ctrl != null) lvl2Ctrl.enabled = false;
+            if (playerWeapons != null) playerWeapons.enabled = false;
+            if (playerRb != null) playerRb.velocity = Vector2.zero;
+            if (playerAnim != null) playerAnim.SetBool("IsMoving", false);
+            if (playerCol != null) playerCol.enabled = false;
+        }
+
+        // Ocultar elementos del HUD de juego como en el Nivel 1
+        GameObject hudObj = GameObject.Find("Canvas_HUD");
+        if (hudObj != null)
+        {
+            Transform hudChild = hudObj.transform.Find("HUD");
+            if (hudChild != null) hudChild.gameObject.SetActive(false);
+            Transform piedrasChild = hudObj.transform.Find("Piedras_HUD");
+            if (piedrasChild != null) piedrasChild.gameObject.SetActive(false);
+            Transform farolChild = hudObj.transform.Find("Farol_HUD");
+            if (farolChild != null) farolChild.gameObject.SetActive(false);
+            Transform busquedaChild = hudObj.transform.Find("BusquedaMonedas");
+            if (busquedaChild != null) busquedaChild.gameObject.SetActive(false);
+        }
+
+        Time.timeScale = 1f;
+        AudioListener.pause = false;
+
+        // 3. FASE 1 (Igual al Nivel 1): Mostrar primero el mensaje de VICTORIA ("ABANDONANDO EL PANTEÓN...") + confeti durante 2.4s
+        ShowVictoryCard(showButtons: false, blackBackground: false);
+        if (victoryCelebration != null) victoryCelebration.Show();
+
+        if (victoryFanfare != null && Camera.main != null)
         {
             AudioSource.PlayClipAtPoint(victoryFanfare, Camera.main.transform.position, 1.0f);
         }
 
-        // Breve pausa dramática
-        yield return new WaitForSeconds(0.6f);
+        yield return new WaitForSecondsRealtime(2.4f);
 
-        // 3. Mostrar ventana de victoria con animación suave
-        if (victoryCanvasGroup != null)
+        // Desvanecer el mensaje inicial de victoria para dar paso a la caminata y apertura de la puerta derecha
+        yield return FadeOutVictoryCardRoutine(0.25f);
+
+        // 4. FASE 2: El jugador se acerca a la Puerta Derecha (Acceso este), la puerta se abre con animación y el jugador cruza
+        if (closedGateBlocker != null) closedGateBlocker.enabled = false;
+        GameObject bardaEste = GameObject.Find("Barda este");
+        if (bardaEste != null)
         {
-            float t = 0f;
-            while (t < 0.65f)
+            foreach (var c in bardaEste.GetComponentsInChildren<Collider2D>())
+                if (c != null) c.enabled = false;
+        }
+
+        Vector3 gateApproachPos = new Vector3(17.6f, GateCenterY, 0f);
+        if (playerObj != null)
+        {
+            Vector3 startPos = playerObj.transform.position;
+            float dist = Vector2.Distance(startPos, gateApproachPos);
+
+            // Si está lejos de la puerta derecha, camina hacia ella
+            if (dist > 0.35f)
             {
-                t += Time.deltaTime;
-                victoryCanvasGroup.alpha = Mathf.Lerp(0f, 1f, t / 0.65f);
+                float walkDuration = Mathf.Clamp(dist / 4.5f, 0.55f, 1.35f);
+                float tWalk = 0f;
+                Vector2 dir = (gateApproachPos - startPos).normalized;
+
+                if (playerAnim != null)
+                {
+                    playerAnim.SetBool("IsMoving", true);
+                    if (Mathf.Abs(dir.x) > Mathf.Abs(dir.y))
+                    {
+                        playerAnim.SetInteger("Direction", dir.x < 0f ? 3 : 2);
+                        if (playerSr != null) playerSr.flipX = dir.x < 0f;
+                    }
+                    else
+                    {
+                        playerAnim.SetInteger("Direction", dir.y > 0f ? 1 : 0);
+                        if (playerSr != null) playerSr.flipX = false;
+                    }
+                }
+
+                while (tWalk < walkDuration)
+                {
+                    float dt = Time.unscaledDeltaTime > 0f ? Time.unscaledDeltaTime : 0.016f;
+                    tWalk += dt;
+                    float p = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(tWalk / walkDuration));
+                    playerObj.transform.position = Vector3.Lerp(startPos, gateApproachPos, p);
+                    yield return null;
+                }
+            }
+
+            playerObj.transform.position = gateApproachPos;
+            if (playerAnim != null)
+            {
+                playerAnim.SetBool("IsMoving", false);
+                playerAnim.SetInteger("Direction", 2);
+            }
+            if (playerSr != null) playerSr.flipX = false;
+        }
+
+        // 5. Animación de apertura de las dos hojas de la Puerta Derecha (Frame 0 -> Frame 9)
+        if (gateOpenClip == null)
+        {
+#if UNITY_EDITOR
+            gateOpenClip = UnityEditor.AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/Sfx/sfx_farol_attack.wav");
+#endif
+        }
+        if (gateOpenClip != null && Camera.main != null)
+        {
+            AudioSource.PlayClipAtPoint(gateOpenClip, Camera.main.transform.position, 0.9f * AudioManager.EnemyVolume);
+        }
+
+        float gateOpenDuration = 1.25f;
+        float gateElapsed = 0f;
+        while (gateElapsed < gateOpenDuration)
+        {
+            float dt = Time.unscaledDeltaTime > 0f ? Time.unscaledDeltaTime : 0.016f;
+            gateElapsed += dt;
+            float p = Mathf.Clamp01(gateElapsed / gateOpenDuration);
+            float smoothP = Mathf.SmoothStep(0f, 1f, p);
+
+            int fIdx = Mathf.Clamp(Mathf.RoundToInt(smoothP * (northGateFrames.Length - 1)), 0, northGateFrames.Length - 1);
+            if (northLeafRenderer != null) northLeafRenderer.sprite = northGateFrames[fIdx];
+            if (southLeafRenderer != null) southLeafRenderer.sprite = southGateFrames[fIdx];
+
+            yield return null;
+        }
+
+        if (northLeafRenderer != null) northLeafRenderer.sprite = northGateFrames[northGateFrames.Length - 1];
+        if (southLeafRenderer != null) southLeafRenderer.sprite = southGateFrames[southGateFrames.Length - 1];
+
+        yield return new WaitForSecondsRealtime(0.12f);
+
+        // 6. El jugador camina cruzando la Puerta Derecha abierta hacia la salida
+        if (playerObj != null)
+        {
+            Vector3 walkStart = playerObj.transform.position;
+            Vector3 walkEnd = new Vector3(23.2f, GateCenterY, 0f);
+            float walkOutDuration = 1.65f;
+            float walkOutElapsed = 0f;
+
+            if (playerAnim != null)
+            {
+                playerAnim.SetBool("IsMoving", true);
+                playerAnim.SetInteger("Direction", 2);
+            }
+            if (playerSr != null) playerSr.flipX = false;
+
+            while (walkOutElapsed < walkOutDuration)
+            {
+                float dt = Time.unscaledDeltaTime > 0f ? Time.unscaledDeltaTime : 0.016f;
+                walkOutElapsed += dt;
+                float p = Mathf.Clamp01(walkOutElapsed / walkOutDuration);
+                playerObj.transform.position = Vector3.Lerp(walkStart, walkEnd, p);
                 yield return null;
             }
-            victoryCanvasGroup.alpha = 1f;
-            victoryCanvasGroup.interactable = true;
-            victoryCanvasGroup.blocksRaycasts = true;
+
+            if (playerAnim != null) playerAnim.SetBool("IsMoving", false);
+        }
+
+        // 7. FASE 3 (Igual al Nivel 1): Oscurecimiento con cierre de IrisInNivel hasta quedar la pantalla en negro total
+        IrisInNivel iris = FindObjectOfType<IrisInNivel>(true);
+        if (iris != null)
+        {
+            iris.gameObject.SetActive(false);
+            iris.closing = true;
+            iris.duracion = 1.0f;
+            if (playerObj != null) iris.jugador = playerObj.transform;
+            iris.gameObject.SetActive(true);
+        }
+
+        if (screenCanvasGroup != null)
+        {
+            screenCanvasGroup.gameObject.SetActive(true);
+            screenCanvasGroup.alpha = 1f;
+            screenCanvasGroup.interactable = true;
+            screenCanvasGroup.blocksRaycasts = true;
+        }
+        if (cardCanvasGroup != null)
+        {
+            cardCanvasGroup.alpha = 0f;
+            cardCanvasGroup.interactable = false;
+            cardCanvasGroup.blocksRaycasts = false;
+        }
+
+        float fadeDuration = 1.05f;
+        float fadeElapsed = 0f;
+        while (fadeElapsed < fadeDuration)
+        {
+            float dt = Time.unscaledDeltaTime > 0f ? Time.unscaledDeltaTime : 0.016f;
+            fadeElapsed += dt;
+            float p = Mathf.Clamp01(fadeElapsed / fadeDuration);
+            if (blackoutImage != null)
+            {
+                blackoutImage.color = new Color(0f, 0f, 0f, p);
+            }
+            yield return null;
+        }
+        if (blackoutImage != null) blackoutImage.color = Color.black;
+
+        if (victoryCelebration != null) victoryCelebration.Hide();
+
+        // 8. FASE 4 (Igual a la Imagen 3 del Nivel 1): Mostrar la tarjeta de pergamino sobre fondo negro con los botones
+        ShowVictoryCard(showButtons: true, blackBackground: true);
+
+        Time.timeScale = 0f;
+        AudioListener.pause = true;
+        Cursor.visible = true;
+        Cursor.lockState = CursorLockMode.None;
+        victoryCardInteractive = true;
+    }
+
+    private void ShowVictoryCard(bool showButtons, bool blackBackground)
+    {
+        if (screenCanvasGroup != null)
+        {
+            screenCanvasGroup.gameObject.SetActive(true);
+            screenCanvasGroup.alpha = 1f;
+            screenCanvasGroup.interactable = showButtons;
+            screenCanvasGroup.blocksRaycasts = true;
+        }
+
+        if (blackoutImage != null)
+        {
+            blackoutImage.color = blackBackground
+                ? Color.black
+                : new Color(0.02f, 0.03f, 0.05f, 0.56f);
+        }
+
+        if (victoryTitleText != null) victoryTitleText.text = "VICTORIA";
+        if (victoryBodyText != null)
+        {
+            victoryBodyText.text = "Recuperaste los tres juguetes.\nEl panteón vuelve a estar en\ncalma.";
+        }
+
+        if (victoryHintText != null)
+        {
+            victoryHintText.text = "ABANDONANDO EL PANTEÓN...";
+            victoryHintText.gameObject.SetActive(!showButtons);
+        }
+
+        if (buttonRowObj != null)
+        {
+            buttonRowObj.SetActive(showButtons);
+        }
+
+        if (cardCanvasGroup != null)
+        {
+            cardCanvasGroup.alpha = 1f;
+            cardCanvasGroup.interactable = showButtons;
+            cardCanvasGroup.blocksRaycasts = showButtons;
         }
     }
 
-    private void OnContinueClicked()
+    private IEnumerator FadeOutVictoryCardRoutine(float duration)
     {
-        StartCoroutine(TransitionRoutine(nextSceneName));
-    }
-
-    private void OnRetryClicked()
-    {
-        StartCoroutine(TransitionRoutine(SceneManager.GetActiveScene().name));
-    }
-
-    private void OnMenuClicked()
-    {
-        StartCoroutine(TransitionRoutine(menuSceneName));
-    }
-
-    private IEnumerator TransitionRoutine(string targetScene)
-    {
-        if (victoryCanvasGroup != null)
+        float elapsed = 0f;
+        Color startBg = blackoutImage != null ? blackoutImage.color : Color.clear;
+        while (elapsed < duration)
         {
-            float t = 0f;
-            while (t < 0.4f)
-            {
-                t += Time.deltaTime;
-                victoryCanvasGroup.alpha = Mathf.Lerp(1f, 0f, t / 0.4f);
-                yield return null;
-            }
+            float dt = Time.unscaledDeltaTime > 0f ? Time.unscaledDeltaTime : 0.016f;
+            elapsed += dt;
+            float a = 1f - Mathf.Clamp01(elapsed / duration);
+            if (cardCanvasGroup != null) cardCanvasGroup.alpha = a;
+            if (blackoutImage != null) blackoutImage.color = new Color(startBg.r, startBg.g, startBg.b, startBg.a * a);
+            yield return null;
+        }
+        if (cardCanvasGroup != null) cardCanvasGroup.alpha = 0f;
+        if (blackoutImage != null) blackoutImage.color = Color.clear;
+        if (screenCanvasGroup != null) screenCanvasGroup.blocksRaycasts = false;
+    }
+
+    #endregion
+
+    #region Interacción Directa de los 4 Botones de Victoria
+
+    private void HandleDirectVictoryButtonsInput()
+    {
+        Vector2 mousePos = Input.mousePosition;
+
+        bool overNext = nextBtnRt != null && RectTransformUtility.RectangleContainsScreenPoint(nextBtnRt, mousePos, null);
+        bool overRetry = retryBtnRt != null && RectTransformUtility.RectangleContainsScreenPoint(retryBtnRt, mousePos, null);
+        bool overMenu = menuBtnRt != null && RectTransformUtility.RectangleContainsScreenPoint(menuBtnRt, mousePos, null);
+        bool overQuit = quitBtnRt != null && RectTransformUtility.RectangleContainsScreenPoint(quitBtnRt, mousePos, null);
+
+        if (nextBtnImg != null) nextBtnImg.color = overNext ? primaryBtnHover : primaryBtnNormal;
+        if (retryBtnImg != null) retryBtnImg.color = overRetry ? secondaryBtnHover : secondaryBtnNormal;
+        if (menuBtnImg != null) menuBtnImg.color = overMenu ? secondaryBtnHover : secondaryBtnNormal;
+        if (quitBtnImg != null) quitBtnImg.color = overQuit ? secondaryBtnHover : secondaryBtnNormal;
+
+        if (Input.GetMouseButtonDown(0))
+        {
+            if (overNext) { OnNextLevelClicked(); return; }
+            if (overRetry) { OnRetryClicked(); return; }
+            if (overMenu) { OnMenuClicked(); return; }
+            if (overQuit) { OnQuitClicked(); return; }
         }
 
-        SceneManager.LoadScene(targetScene);
+        if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
+        {
+            OnNextLevelClicked();
+        }
+        else if (Input.GetKeyDown(KeyCode.R))
+        {
+            OnRetryClicked();
+        }
+        else if (Input.GetKeyDown(KeyCode.M))
+        {
+            OnMenuClicked();
+        }
+        else if (Input.GetKeyDown(KeyCode.Escape))
+        {
+            OnQuitClicked();
+        }
     }
+
+    public void OnNextLevelClicked()
+    {
+        if (actionInProgress) return;
+        actionInProgress = true;
+        Time.timeScale = 1f;
+        AudioListener.pause = false;
+
+        if (Application.CanStreamedLevelBeLoaded(nextSceneName))
+        {
+            SceneManager.LoadScene(nextSceneName);
+        }
+        else
+        {
+            int nextBuildIdx = SceneManager.GetActiveScene().buildIndex + 1;
+            if (nextBuildIdx < SceneManager.sceneCountInBuildSettings)
+            {
+                SceneManager.LoadScene(nextBuildIdx);
+            }
+            else
+            {
+                SceneManager.LoadScene(fallbackMenuSceneName);
+            }
+        }
+    }
+
+    public void OnRetryClicked()
+    {
+        if (actionInProgress) return;
+        actionInProgress = true;
+        Time.timeScale = 1f;
+        AudioListener.pause = false;
+        SceneManager.LoadScene(SceneManager.GetActiveScene().name);
+    }
+
+    public void OnMenuClicked()
+    {
+        if (actionInProgress) return;
+        actionInProgress = true;
+        Time.timeScale = 1f;
+        AudioListener.pause = false;
+        SceneManager.LoadScene(fallbackMenuSceneName);
+    }
+
+    public void OnQuitClicked()
+    {
+        if (actionInProgress) return;
+        actionInProgress = true;
+        Time.timeScale = 1f;
+        AudioListener.pause = false;
+#if UNITY_EDITOR
+        UnityEditor.EditorApplication.isPlaying = false;
+#else
+        Application.Quit();
+#endif
+    }
+
+    #endregion
+
+    #region Construcción Procedural de la Tarjeta de Victoria idéntica a la Imagen 3 del Nivel 1
 
     private void HideImmediate()
     {
-        if (victoryCanvasGroup != null)
+        if (screenCanvasGroup != null)
         {
-            victoryCanvasGroup.alpha = 0f;
-            victoryCanvasGroup.interactable = false;
-            victoryCanvasGroup.blocksRaycasts = false;
+            screenCanvasGroup.alpha = 0f;
+            screenCanvasGroup.interactable = false;
+            screenCanvasGroup.blocksRaycasts = false;
+        }
+        if (cardCanvasGroup != null)
+        {
+            cardCanvasGroup.alpha = 0f;
+            cardCanvasGroup.interactable = false;
+            cardCanvasGroup.blocksRaycasts = false;
+        }
+        if (blackoutImage != null)
+        {
+            blackoutImage.color = Color.clear;
         }
     }
 
     private void SetupProceduralUIIfMissing()
     {
+        if (FindObjectOfType<EventSystem>() == null)
+        {
+            GameObject es = new GameObject("EventSystem");
+            es.AddComponent<EventSystem>();
+            es.AddComponent<StandaloneInputModule>();
+        }
+
+        Sprite parchmentSprite = null;
+        TMP_FontAsset pixelFont = Resources.Load<TMP_FontAsset>("Fonts & Materials/PressStart2P-Regular SDF");
+#if UNITY_EDITOR
+        parchmentSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Sprites/UI/CartaAntigua_Sello.png");
+        if (pixelFont == null)
+            pixelFont = UnityEditor.AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/Fonts/PressStart2P-Regular SDF.asset");
+        if (pixelFont == null)
+            pixelFont = UnityEditor.AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/TextMesh Pro/Resources/Fonts & Materials/PressStart2P-Regular SDF.asset");
+#endif
+        if (parchmentSprite == null && ParchmentMessageUI.Instance != null)
+        {
+            parchmentSprite = ParchmentMessageUI.Instance.parchmentSprite;
+        }
+        if (pixelFont == null && ParchmentMessageUI.Instance != null)
+        {
+            pixelFont = ParchmentMessageUI.Instance.pixelFont;
+        }
+
         Canvas canvas = GetComponentInParent<Canvas>();
         if (canvas == null)
         {
-            GameObject canvasObj = new GameObject("VictoryCanvas");
+            GameObject canvasObj = new GameObject("VictoryCanvas_Nivel2");
             canvas = canvasObj.AddComponent<Canvas>();
             canvas.renderMode = RenderMode.ScreenSpaceOverlay;
-            canvas.sortingOrder = 980;
-            canvasObj.AddComponent<CanvasScaler>();
+            canvas.sortingOrder = 2100;
+            var scaler = canvasObj.AddComponent<CanvasScaler>();
+            scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
+            scaler.referenceResolution = new Vector2(1920f, 1080f);
+            scaler.matchWidthOrHeight = 0.5f;
             canvasObj.AddComponent<GraphicRaycaster>();
             transform.SetParent(canvasObj.transform, false);
         }
 
-        victoryCanvasGroup = GetComponent<CanvasGroup>();
-        if (victoryCanvasGroup == null) victoryCanvasGroup = gameObject.AddComponent<CanvasGroup>();
+        screenCanvasGroup = GetComponent<CanvasGroup>();
+        if (screenCanvasGroup == null) screenCanvasGroup = gameObject.AddComponent<CanvasGroup>();
 
         RectTransform rootRt = GetComponent<RectTransform>();
         if (rootRt == null) rootRt = gameObject.AddComponent<RectTransform>();
@@ -168,112 +993,169 @@ public class Level2VictoryManager : MonoBehaviour
         rootRt.anchorMax = Vector2.one;
         rootRt.sizeDelta = Vector2.zero;
 
-        // Fondo oscuro semitransparente
-        Image bgImg = GetComponent<Image>();
-        if (bgImg == null) bgImg = gameObject.AddComponent<Image>();
-        bgImg.color = new Color(0.04f, 0.05f, 0.08f, 0.92f);
+        // Fondo oscuro / negro completo (idéntico a Imagen 3)
+        blackoutImage = GetComponent<Image>();
+        if (blackoutImage == null) blackoutImage = gameObject.AddComponent<Image>();
+        blackoutImage.color = Color.clear;
 
-        // Panel central
-        GameObject card = new GameObject("VictoryCard");
-        card.transform.SetParent(transform, false);
-        RectTransform cardRt = card.AddComponent<RectTransform>();
-        cardRt.anchorMin = new Vector2(0.5f, 0.5f);
-        cardRt.anchorMax = new Vector2(0.5f, 0.5f);
-        cardRt.sizeDelta = new Vector2(620f, 380f);
-        Image cardBg = card.AddComponent<Image>();
-        cardBg.color = new Color(0.1f, 0.12f, 0.18f, 0.98f);
+        // Confeti pixel-art de celebración (idéntico al Nivel 1)
+        GameObject celebObj = new GameObject("VictoryCelebration");
+        celebObj.transform.SetParent(transform, false);
+        RectTransform celebRt = celebObj.AddComponent<RectTransform>();
+        celebRt.anchorMin = new Vector2(0.5f, 0.5f);
+        celebRt.anchorMax = new Vector2(0.5f, 0.5f);
+        celebRt.sizeDelta = new Vector2(720f, 320f);
+        celebObj.AddComponent<CanvasGroup>();
+        victoryCelebration = celebObj.AddComponent<VictoryCelebration>();
 
-        // Título Principal
-        GameObject titleObj = new GameObject("VictoryTitle");
-        titleObj.transform.SetParent(card.transform, false);
+        // Tarjeta de pergamino con sello rojo a la izquierda (CartaAntigua_Sello.png, 620x252, igual que en Nivel 1 / Imagen 3)
+        GameObject cardObj = new GameObject("Tarjeta_Victoria");
+        cardObj.transform.SetParent(transform, false);
+        cardRect = cardObj.AddComponent<RectTransform>();
+        cardRect.anchorMin = new Vector2(0.5f, 0.5f);
+        cardRect.anchorMax = new Vector2(0.5f, 0.5f);
+        cardRect.pivot = new Vector2(0.5f, 0.5f);
+        cardRect.anchoredPosition = new Vector2(0f, 10f);
+        cardRect.sizeDelta = new Vector2(620f, 252f);
+
+        cardCanvasGroup = cardObj.AddComponent<CanvasGroup>();
+        cardBackground = cardObj.AddComponent<Image>();
+        if (parchmentSprite != null)
+        {
+            cardBackground.sprite = parchmentSprite;
+            cardBackground.color = Color.white;
+        }
+        else
+        {
+            cardBackground.color = new Color32(230, 217, 184, 255);
+        }
+
+        // Título "VICTORIA" (alineado a la izquierda sobre el pergamino igual que en Imagen 3)
+        GameObject titleObj = new GameObject("Titulo_Resultado");
+        titleObj.transform.SetParent(cardObj.transform, false);
         RectTransform titleRt = titleObj.AddComponent<RectTransform>();
         titleRt.anchorMin = new Vector2(0f, 1f);
         titleRt.anchorMax = new Vector2(1f, 1f);
         titleRt.pivot = new Vector2(0.5f, 1f);
-        titleRt.anchoredPosition = new Vector2(0f, -24f);
-        titleRt.sizeDelta = new Vector2(0f, 40f);
+        titleRt.anchoredPosition = new Vector2(18f, -24f);
+        titleRt.sizeDelta = new Vector2(-196f, 28f);
         victoryTitleText = titleObj.AddComponent<TextMeshProUGUI>();
-        victoryTitleText.text = "¡VICTORIA EN EL PANTEÓN!";
-        victoryTitleText.alignment = TextAlignmentOptions.Center;
-        victoryTitleText.fontSize = 24;
-        victoryTitleText.fontStyle = FontStyles.Bold;
-        victoryTitleText.color = new Color(1f, 0.85f, 0.35f, 1f);
+        if (pixelFont != null) victoryTitleText.font = pixelFont;
+        victoryTitleText.text = "VICTORIA";
+        victoryTitleText.alignment = TextAlignmentOptions.Left;
+        victoryTitleText.fontSize = 14f;
+        victoryTitleText.color = new Color(0.545f, 0.369f, 0.2f, 1f);
 
-        // Subtítulo
-        GameObject subObj = new GameObject("VictorySubtitle");
-        subObj.transform.SetParent(card.transform, false);
-        RectTransform subRt = subObj.AddComponent<RectTransform>();
-        subRt.anchorMin = new Vector2(0f, 1f);
-        subRt.anchorMax = new Vector2(1f, 1f);
-        subRt.pivot = new Vector2(0.5f, 1f);
-        subRt.anchoredPosition = new Vector2(0f, -65f);
-        subRt.sizeDelta = new Vector2(0f, 25f);
-        victorySubtitleText = subObj.AddComponent<TextMeshProUGUI>();
-        victorySubtitleText.text = "Nivel 2 Superado con Éxito";
-        victorySubtitleText.alignment = TextAlignmentOptions.Center;
-        victorySubtitleText.fontSize = 15;
-        victorySubtitleText.color = new Color(0.4f, 0.85f, 1f, 1f);
+        // Texto principal del pergamino
+        GameObject bodyObj = new GameObject("Texto_Resultado");
+        bodyObj.transform.SetParent(cardObj.transform, false);
+        RectTransform bodyRt = bodyObj.AddComponent<RectTransform>();
+        bodyRt.anchorMin = new Vector2(0f, 0f);
+        bodyRt.anchorMax = new Vector2(1f, 1f);
+        bodyRt.pivot = new Vector2(0.5f, 0.5f);
+        bodyRt.anchoredPosition = new Vector2(18f, 8f);
+        bodyRt.sizeDelta = new Vector2(-196f, -126f);
+        victoryBodyText = bodyObj.AddComponent<TextMeshProUGUI>();
+        if (pixelFont != null) victoryBodyText.font = pixelFont;
+        victoryBodyText.text = "Recuperaste los tres juguetes.\nEl panteón vuelve a estar en\ncalma.";
+        victoryBodyText.alignment = TextAlignmentOptions.TopLeft;
+        victoryBodyText.fontSize = 12f;
+        victoryBodyText.lineSpacing = 12f;
+        victoryBodyText.color = new Color(0.286f, 0.204f, 0.098f, 1f);
+        victoryBodyText.enableWordWrapping = true;
 
-        // Descripción
-        GameObject descObj = new GameObject("VictoryDescription");
-        descObj.transform.SetParent(card.transform, false);
-        RectTransform descRt = descObj.AddComponent<RectTransform>();
-        descRt.anchorMin = new Vector2(0f, 0.5f);
-        descRt.anchorMax = new Vector2(1f, 0.5f);
-        descRt.pivot = new Vector2(0.5f, 0.5f);
-        descRt.anchoredPosition = new Vector2(0f, 10f);
-        descRt.sizeDelta = new Vector2(-60f, 120f);
-        victoryDescriptionText = descObj.AddComponent<TextMeshProUGUI>();
-        victoryDescriptionText.text =
-            "Has derrotado a las huestes de La Llorona y superado el combate contra el Niño Espectral.\n\n" +
-            "Los 3 juguetes perdidos han sido recuperados y purificados.\n" +
-            "¡El portal hacia la siguiente fase está abierto!";
-        victoryDescriptionText.alignment = TextAlignmentOptions.Center;
-        victoryDescriptionText.fontSize = 14;
-        victoryDescriptionText.color = Color.white;
-        victoryDescriptionText.enableWordWrapping = true;
+        // Texto inferior durante la primera parte de la cinemática ("ABANDONANDO EL PANTEÓN...")
+        GameObject hintObj = new GameObject("Ayuda_Resultado");
+        hintObj.transform.SetParent(cardObj.transform, false);
+        RectTransform hintRt = hintObj.AddComponent<RectTransform>();
+        hintRt.anchorMin = new Vector2(0f, 0f);
+        hintRt.anchorMax = new Vector2(1f, 0f);
+        hintRt.pivot = new Vector2(0.5f, 0f);
+        hintRt.anchoredPosition = new Vector2(18f, 24f);
+        hintRt.sizeDelta = new Vector2(-196f, 24f);
+        victoryHintText = hintObj.AddComponent<TextMeshProUGUI>();
+        if (pixelFont != null) victoryHintText.font = pixelFont;
+        victoryHintText.text = "ABANDONANDO EL PANTEÓN...";
+        victoryHintText.alignment = TextAlignmentOptions.Left;
+        victoryHintText.fontSize = 10f;
+        victoryHintText.color = new Color(0.545f, 0.369f, 0.2f, 1f);
 
-        // Fila de botones
-        GameObject btnRow = new GameObject("ButtonRow");
-        btnRow.transform.SetParent(card.transform, false);
-        RectTransform rowRt = btnRow.AddComponent<RectTransform>();
+        // Fila inferior de botones dentro del pergamino (idéntica a Imagen 3: REINTENTAR, MENU PRINCIPAL, SALIR + SIGUIENTE)
+        buttonRowObj = new GameObject("Botones_Resultado");
+        buttonRowObj.transform.SetParent(cardObj.transform, false);
+        RectTransform rowRt = buttonRowObj.AddComponent<RectTransform>();
         rowRt.anchorMin = new Vector2(0f, 0f);
         rowRt.anchorMax = new Vector2(1f, 0f);
         rowRt.pivot = new Vector2(0.5f, 0f);
-        rowRt.anchoredPosition = new Vector2(0f, 24f);
-        rowRt.sizeDelta = new Vector2(-40f, 44f);
-        var layout = btnRow.AddComponent<HorizontalLayoutGroup>();
-        layout.spacing = 16f;
-        layout.childAlignment = TextAnchor.MiddleCenter;
+        rowRt.anchoredPosition = new Vector2(28f, 18f);
+        rowRt.sizeDelta = new Vector2(-148f, 34f);
+
+        var layout = buttonRowObj.AddComponent<HorizontalLayoutGroup>();
+        layout.spacing = 8f;
+        layout.childAlignment = TextAnchor.MiddleLeft;
         layout.childControlWidth = true;
         layout.childControlHeight = true;
+        layout.childForceExpandWidth = true;
+        layout.childForceExpandHeight = true;
 
-        continueButton = CreateButton(btnRow.transform, "BtnContinuar", "CONTINUAR", new Color(0.2f, 0.65f, 0.35f, 1f));
-        retryButton = CreateButton(btnRow.transform, "BtnReintentar", "REINTENTAR", new Color(0.35f, 0.45f, 0.6f, 1f));
-        menuButton = CreateButton(btnRow.transform, "BtnMenu", "MENÚ", new Color(0.55f, 0.25f, 0.25f, 1f));
+        retryButton = CreateParchmentButton(
+            buttonRowObj.transform, "Boton_Reintentar", "REINTENTAR",
+            primaryBtnNormal, pixelFont, 8.5f, out retryBtnRt, out retryBtnImg);
+        retryButton.onClick.AddListener(OnRetryClicked);
+
+        menuButton = CreateParchmentButton(
+            buttonRowObj.transform, "Boton_Menu", "MENU PRINCIPAL",
+            secondaryBtnNormal, pixelFont, 7.2f, out menuBtnRt, out menuBtnImg);
+        menuButton.onClick.AddListener(OnMenuClicked);
+
+        nextLevelButton = CreateParchmentButton(
+            buttonRowObj.transform, "Boton_Siguiente", "SIGUIENTE",
+            primaryBtnNormal, pixelFont, 8.5f, out nextBtnRt, out nextBtnImg);
+        nextLevelButton.onClick.AddListener(OnNextLevelClicked);
+
+        quitButton = CreateParchmentButton(
+            buttonRowObj.transform, "Boton_Salir", "SALIR",
+            secondaryBtnNormal, pixelFont, 8.5f, out quitBtnRt, out quitBtnImg);
+        quitButton.onClick.AddListener(OnQuitClicked);
     }
 
-    private Button CreateButton(Transform parent, string name, string label, Color color)
+    private Button CreateParchmentButton(
+        Transform parent,
+        string name,
+        string label,
+        Color baseColor,
+        TMP_FontAsset font,
+        float fontSize,
+        out RectTransform btnRt,
+        out Image btnImg)
     {
         GameObject btnObj = new GameObject(name);
         btnObj.transform.SetParent(parent, false);
-        Image img = btnObj.AddComponent<Image>();
-        img.color = color;
+        btnRt = btnObj.AddComponent<RectTransform>();
+
+        btnImg = btnObj.AddComponent<Image>();
+        btnImg.color = baseColor;
         Button btn = btnObj.AddComponent<Button>();
 
-        GameObject txtObj = new GameObject("Text");
+        GameObject txtObj = new GameObject("Texto");
         txtObj.transform.SetParent(btnObj.transform, false);
         RectTransform txtRt = txtObj.AddComponent<RectTransform>();
         txtRt.anchorMin = Vector2.zero;
         txtRt.anchorMax = Vector2.one;
-        txtRt.sizeDelta = Vector2.zero;
+        txtRt.offsetMin = new Vector2(4f, 2f);
+        txtRt.offsetMax = new Vector2(-4f, -2f);
+
         TextMeshProUGUI tmp = txtObj.AddComponent<TextMeshProUGUI>();
+        if (font != null) tmp.font = font;
         tmp.text = label;
         tmp.alignment = TextAlignmentOptions.Center;
-        tmp.fontSize = 14;
-        tmp.fontStyle = FontStyles.Bold;
-        tmp.color = Color.white;
+        tmp.fontSize = fontSize;
+        tmp.color = new Color32(238, 228, 202, 255);
+        tmp.enableWordWrapping = false;
+        tmp.raycastTarget = false;
 
         return btn;
     }
+
+    #endregion
 }
