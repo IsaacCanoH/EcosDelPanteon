@@ -8,7 +8,7 @@ public class EnemyHealth : MonoBehaviour, IDamageable
     {
         NormalGoblin = 0,       // 50 HP, 10 de daño
         ChubbyGoblin = 1,       // 80 HP, 20 de daño, suelta 1 orbe de vida (1 corazón) al morir
-        SpectralChildBoss = 2   // 180 HP, 15 proyectil / 20 contacto
+        SpectralChildBoss = 2   // 250 HP, 15 proyectil / 20 contacto
     }
 
     [Header("Variante y Estadísticas")]
@@ -86,7 +86,7 @@ public class EnemyHealth : MonoBehaviour, IDamageable
                 break;
 
             case EnemyVariant.SpectralChildBoss:
-                maxHealth = 180;
+                maxHealth = 250;
                 knockbackForce = 0f;
                 dropsHealthOrbOnDeath = false; // El jefe tiene su propia lógica de drops
                 break;
@@ -103,7 +103,7 @@ public class EnemyHealth : MonoBehaviour, IDamageable
         }
         else if (variant == EnemyVariant.SpectralChildBoss)
         {
-            if (maxHealth == 50) maxHealth = 180;
+            if (maxHealth <= 180) maxHealth = 250;
         }
     }
 
@@ -206,7 +206,6 @@ public class EnemyHealth : MonoBehaviour, IDamageable
 
     public static GameObject SpawnOneHeartOrb(Vector3 position, GameObject customPrefab = null)
     {
-        // En Nivel 1 nunca dropea orbes de vida; habilitado en Niveles 2, 3 y 4
         if (IsLevel1Scene())
         {
             return null;
@@ -229,7 +228,7 @@ public class EnemyHealth : MonoBehaviour, IDamageable
         SpriteRenderer sr = orb.AddComponent<SpriteRenderer>();
         sr.sprite = GetOrCreateRedOrbSprite();
         sr.sortingLayerName = "Layer 1";
-        sr.sortingOrder = 3; // Visible en Layer 1 junto con el jugador y props
+        sr.sortingOrder = 3;
 
         CircleCollider2D col = orb.AddComponent<CircleCollider2D>();
         col.radius = 0.35f;
@@ -273,11 +272,11 @@ public class EnemyHealth : MonoBehaviour, IDamageable
                 if (d > 6.2f)
                     tex.SetPixel(x, y, Color.clear);
                 else if (d > 5.0f)
-                    tex.SetPixel(x, y, new Color(0.45f, 0.05f, 0.12f, 0.9f)); // Borde carmesí oscuro
+                    tex.SetPixel(x, y, new Color(0.45f, 0.05f, 0.12f, 0.9f));
                 else if (d > 2.4f)
-                    tex.SetPixel(x, y, new Color(0.95f, 0.16f, 0.26f, 1f));   // Cuerpo rojo vivo
+                    tex.SetPixel(x, y, new Color(0.95f, 0.16f, 0.26f, 1f));
                 else
-                    tex.SetPixel(x, y, new Color(1f, 0.72f, 0.78f, 1f));      // Núcleo brillante
+                    tex.SetPixel(x, y, new Color(1f, 0.72f, 0.78f, 1f));
             }
         }
         tex.Apply();
@@ -302,4 +301,3 @@ public class EnemyHealth : MonoBehaviour, IDamageable
         Destroy(gameObject);
     }
 }
-

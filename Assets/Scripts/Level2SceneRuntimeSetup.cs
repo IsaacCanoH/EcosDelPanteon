@@ -4,7 +4,8 @@ using UnityEngine.Rendering;
 
 /// <summary>
 /// Garantiza la configuración de capas, colisiones sólidas de bancas y props,
-/// inicialización de indicadores de alerta/sospecha, y eliminación de tarjetas dobles en el Nivel 2.
+/// altares traspasables (solo los 3 altares), inicialización de puerta derecha de salida,
+/// indicadores de alerta/sospecha, y eliminación de tarjetas dobles en el Nivel 2.
 /// </summary>
 public static class Level2SceneRuntimeSetup
 {
@@ -74,13 +75,13 @@ public static class Level2SceneRuntimeSetup
             }
         }
 
-        // 3. Configuración sólida y de capas para Bancas y Props
+        // 3. Configuración sólida y de capas para Bancas, Altares (traspasables) y Props
         foreach (var t in Object.FindObjectsOfType<Transform>(true))
         {
             if (t == null) continue;
             string n = t.name;
 
-            // Bancas de piedra
+            // Bancas de piedra (sólidas)
             if (n.Contains("Bench"))
             {
                 t.gameObject.layer = obstaclesLayer;
@@ -126,30 +127,26 @@ public static class Level2SceneRuntimeSetup
                     }
                 }
             }
-            // Altares de encuentro
+            // Los 3 Altares de encuentro: completamente traspasables para el jugador y los enemigos
             else if (n.StartsWith("Altar_Encounter_"))
             {
-                t.gameObject.layer = obstaclesLayer;
+                t.gameObject.layer = 0; // Default (no Obstacles)
 
-                var circle = t.GetComponent<CircleCollider2D>();
-                if (circle == null) circle = t.gameObject.AddComponent<CircleCollider2D>();
-                circle.enabled = true;
-                circle.isTrigger = false;
-                circle.offset = new Vector2(0f, 0.70f);
-                circle.radius = 1.40f;
-
-                var box = t.GetComponent<BoxCollider2D>();
-                if (box != null)
+                foreach (var col in t.GetComponents<Collider2D>())
                 {
-                    box.enabled = true;
-                    box.isTrigger = false;
+                    if (col != null && !col.isTrigger && col.GetComponent<ToyEncounterZone>() == null)
+                    {
+                        col.enabled = false;
+                        Object.Destroy(col);
+                    }
                 }
 
                 foreach (var sr in t.GetComponentsInChildren<SpriteRenderer>(true))
                 {
                     sr.sortingLayerName = "Layer 1";
                     sr.spriteSortPoint = SpriteSortPoint.Pivot;
-                    sr.sortingOrder = sr.name.Contains("Shadow") ? 1 : 2;
+                    // sortingOrder = 1 para que el jugador y los enemigos (sortingOrder = 2) pasen por encima del altar
+                    sr.sortingOrder = sr.name.Contains("Shadow") ? 0 : 1;
                 }
             }
             // Árboles
@@ -276,6 +273,13 @@ public static class Level2SceneRuntimeSetup
                     }
                 }
             }
+        }
+
+        // 6. Asegurar gestor de Puerta de Salida Este y Cinemática Final de Victoria
+        if (Object.FindObjectOfType<Level2VictoryManager>() == null)
+        {
+            GameObject victoryMgrObj = new GameObject("Level2VictoryManager");
+            victoryMgrObj.AddComponent<Level2VictoryManager>();
         }
     }
 }

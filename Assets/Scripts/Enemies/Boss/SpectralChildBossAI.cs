@@ -1,3 +1,4 @@
+using System;
 using System.Collections;
 using System.Collections.Generic;
 using UnityEngine;
@@ -18,8 +19,8 @@ public class SpectralChildBossAI : MonoBehaviour
     [Header("Estadísticas de Combate")]
     public int contactDamage = 15;
     public int projectileDamage = 15;
-    public float baseMoveSpeed = 1.15f;
-    public float overchargeSpeed = 1.35f;
+    public float baseMoveSpeed = 1.65f;
+    public float overchargeSpeed = 2.05f;
     public float idealDistanceMin = 2.0f;
     public float idealDistanceMax = 3.8f;
     public float maxAltarLeash = 6.2f;
@@ -52,6 +53,9 @@ public class SpectralChildBossAI : MonoBehaviour
     public int maxActiveMinions = 4;
 
     public BossState CurrentState { get; private set; } = BossState.Spawning;
+    public event Action<Vector3> OnDeathCinematicFinished;
+
+    private static Sprite softGlowSprite;
 
     public void TakeDamage(int damage)
     {
@@ -71,6 +75,7 @@ public class SpectralChildBossAI : MonoBehaviour
     private float nextMinionSpawnTime;
     private float nextStepSoundTime;
     private int attackCycleIndex = 0;
+    private int obstaclesMask;
     private readonly List<EnemyHealth> activeMinions = new List<EnemyHealth>();
 
     // Reglas de Sobrecarga (Overcharge)
@@ -89,6 +94,9 @@ public class SpectralChildBossAI : MonoBehaviour
         if (audioSource == null) audioSource = gameObject.AddComponent<AudioSource>();
         audioSource.playOnAwake = false;
 
+        int obsLayer = LayerMask.NameToLayer("Obstacles");
+        obstaclesMask = obsLayer >= 0 ? (1 << obsLayer) : (1 << 6);
+
         // Configuración física para colisionar de manera sólida con los muros perimetrales
         rb.bodyType = RigidbodyType2D.Dynamic;
         rb.gravityScale = 0f;
@@ -99,14 +107,26 @@ public class SpectralChildBossAI : MonoBehaviour
         if (visualRenderer == null)
             visualRenderer = GetComponentInChildren<SpriteRenderer>();
 
+        if (visualRenderer != null)
+        {
+            visualRenderer.sortingLayerName = "Layer 1";
+            visualRenderer.sortingOrder = 2;
+        }
+
         LoadAudioClips();
 
         if (health != null)
         {
             health.ConfigureVariant(EnemyHealth.EnemyVariant.SpectralChildBoss);
+            health.maxHealth = 250;
+            health.currentHealth = 250;
             health.OnDamageTaken += HandleDamageTaken;
             health.OnDied += HandleDeath;
         }
+
+        // Velocidad moderada: un poquito más rápido pero contenido
+        baseMoveSpeed = 1.65f;
+        overchargeSpeed = 2.05f;
 
         // Si existe GhostChildAI residual, desactivarlo
         var oldAi = GetComponent<GhostChildAI>();
@@ -129,11 +149,20 @@ public class SpectralChildBossAI : MonoBehaviour
 
     private void Start()
     {
-        // Anclar punto de origen en el altar del tercer encuentro
+        // Anclar punto de origen en el tercer altar y garantizar posición libre de tumbas/obstáculos
         altarOrigin = transform.position;
-        var altarZone = FindObjectOfType<ToyEncounterZone>();
-        if (altarZone != null && altarZone.bossSpawnPoint != null)
-            altarOrigin = altarZone.bossSpawnPoint.position;
+        foreach (var zone in FindObjectsOfType<ToyEncounterZone>())
+        {
+            if (zone != null && zone.encounterIndex == 2)
+            {
+                altarOrigin = zone.transform.position;
+                break;
+            }
+        }
+
+        Vector2 safeSpawn = FindClearPosition(transform.position);
+        transform.position = safeSpawn;
+        rb.position = safeSpawn;
 
         GameObject p = GameObject.FindGameObjectWithTag("Player");
         if (p != null)
@@ -154,6 +183,69 @@ public class SpectralChildBossAI : MonoBehaviour
         StartCoroutine(SpawnIntroRoutine());
     }
 
+    public Vector2 FindClearPosition(Vector2 desiredPos)
+    {
+        // Verificar si la posición deseada está libre de tumbas/obstáculos
+        if (!IsPositionBlocked(desiredPos, 0.55f))
+            return desiredPos;
+
+        // Candidatos prioritarios alrededor del centro/norte del Altar 3 (lejos de las tumbas del sur)
+        Vector2[] offsets = new Vector2[]
+        {
+            new Vector2(0f, 0.85f),
+            new Vector2(0f, 1.35f),
+            new Vector2(-1.1f, 0.7f),
+            new Vector2(1.1f, 0.7f),
+            new Vector2(-1.5f, 1.2f),
+            new Vector2(1.5f, 1.2f),
+            new Vector2(0f, 2.0f)
+        };
+
+        foreach (var off in offsets)
+        {
+            Vector2 candidate = desiredPos + off;
+            candidate.x = Mathf.Clamp(candidate.x, MinMapX, MaxMapX);
+            candidate.y = Mathf.Clamp(candidate.y, MinMapY, MaxMapY);
+            if (!IsPositionBlocked(candidate, 0.55f))
+                return candidate;
+        }
+
+        return desiredPos + new Vector2(0f, 1.0f);
+    }
+
+    private bool IsPositionBlocked(Vector2 pos, float radius)
+    {
+        Collider2D[] hits = Physics2D.OverlapCircleAll(pos, radius, obstaclesMask);
+        foreach (var h in hits)
+        {
+            if (h != null && !h.isTrigger && h.gameObject != gameObject)
+                return true;
+        }
+        return false;
+    }
+
+    private Vector2 AdjustDirectionForObstacles(Vector2 currentPos, Vector2 desiredDir, float stepDist)
+    {
+        if (desiredDir.sqrMagnitude < 0.0001f) return Vector2.zero;
+
+        Vector2 normDir = desiredDir.normalized;
+        float checkRadius = 0.42f;
+        RaycastHit2D hit = Physics2D.CircleCast(currentPos, checkRadius, normDir, stepDist + 0.35f, obstaclesMask);
+        if (hit.collider == null || hit.collider.isTrigger || hit.collider.gameObject == gameObject)
+            return desiredDir;
+
+        // Deslizarse suavemente rodeando la tumba u obstáculo
+        Vector2 slideA = new Vector2(-hit.normal.y, hit.normal.x);
+        Vector2 slideB = -slideA;
+        Vector2 chosenSlide = Vector2.Dot(slideA, normDir) >= Vector2.Dot(slideB, normDir) ? slideA : slideB;
+
+        RaycastHit2D checkSlide = Physics2D.CircleCast(currentPos, checkRadius * 0.9f, chosenSlide, stepDist + 0.25f, obstaclesMask);
+        if (checkSlide.collider == null || checkSlide.collider.isTrigger)
+            return chosenSlide * desiredDir.magnitude;
+
+        return (-normDir + hit.normal).normalized * desiredDir.magnitude;
+    }
+
     private void OnDestroy()
     {
         if (health != null)
@@ -171,7 +263,6 @@ public class SpectralChildBossAI : MonoBehaviour
         if (audioSource != null && laughClip != null)
             audioSource.PlayOneShot(laughClip, 0.85f * AudioManager.EnemyVolume);
 
-        // Aparición espectral con fade-in
         float t = 0f;
         while (t < 1.0f)
         {
@@ -213,8 +304,8 @@ public class SpectralChildBossAI : MonoBehaviour
             return;
         }
 
-        // Verificación de fase de desesperación (últimos 30 de vida: sobrecarga cada 7s que dura 5s)
-        if (health.currentHealth <= 30 && Time.time >= nextDesperationOverchargeTime)
+        // Verificación de fase de desesperación (últimos 45 de vida: sobrecarga cada 7s que dura 5s)
+        if (health.currentHealth <= 45 && Time.time >= nextDesperationOverchargeTime)
         {
             TriggerOvercharge(5.0f);
             return;
@@ -236,43 +327,38 @@ public class SpectralChildBossAI : MonoBehaviour
         Vector2 toPlayer = (Vector2)playerTransform.position - currentPos;
         float distToPlayer = toPlayer.magnitude;
 
-        Vector2 moveDir = Vector2.zero;
-
-        // Comportamiento de distancia respecto al jugador (no se aleja, orbita y acosa lentamente)
+        Vector2 moveDir;
         if (distToPlayer > idealDistanceMax)
         {
-            // Acercarse suavemente al jugador
             moveDir = toPlayer.normalized;
         }
         else if (distToPlayer < idealDistanceMin)
         {
-            // Retroceder ligeramente manteniendo el espacio
             moveDir = -toPlayer.normalized * 0.8f;
         }
         else
         {
-            // Orbitar lateralmente alrededor del jugador
             Vector2 tangent = new Vector2(-toPlayer.y, toPlayer.x).normalized;
-            moveDir = tangent * 0.55f;
+            moveDir = tangent * 0.82f;
         }
 
-        Vector2 targetPos = currentPos + moveDir * (baseMoveSpeed * Time.deltaTime);
+        float step = baseMoveSpeed * Time.deltaTime;
+        moveDir = AdjustDirectionForObstacles(currentPos, moveDir, step);
+        Vector2 targetPos = currentPos + moveDir * step;
 
-        // Anclaje al altar: no alejarse demasiado de la zona del tercer altar
         float distFromAltar = Vector2.Distance(targetPos, altarOrigin);
         if (distFromAltar > maxAltarLeash)
         {
-            targetPos = Vector2.MoveTowards(targetPos, altarOrigin, baseMoveSpeed * 1.1f * Time.deltaTime);
+            Vector2 toAltar = (altarOrigin - currentPos).normalized;
+            toAltar = AdjustDirectionForObstacles(currentPos, toAltar, step);
+            targetPos = currentPos + toAltar * (baseMoveSpeed * 1.1f * Time.deltaTime);
         }
 
-        // Restringir dentro de las bardas perimetrales del cementerio
         targetPos.x = Mathf.Clamp(targetPos.x, MinMapX, MaxMapX);
         targetPos.y = Mathf.Clamp(targetPos.y, MinMapY, MaxMapY);
 
-        // Mover a través del Rigidbody2D para respetar la física y colisiones con los muros
         rb.MovePosition(targetPos);
 
-        // Actualizar orientación y animación de paso
         if (animator != null)
         {
             bool isMoving = moveDir.sqrMagnitude > 0.001f;
@@ -298,18 +384,20 @@ public class SpectralChildBossAI : MonoBehaviour
     {
         if (isInOvercharge || CurrentState == BossState.Dying) return;
 
-        // Activación de sobrecarga cada 50 de vida perdida:
-        // Vida max = 180.
-        // Primer umbral: <= 130 HP -> 5 segundos de sobrecarga
-        // Segundo umbral: <= 80 HP -> 5 segundos de sobrecarga
-        if (overchargesTriggered == 0 && health.currentHealth <= 130)
+        // Con 250 HP máximos: sobrecargas a 190 HP, 130 HP y 75 HP
+        if (overchargesTriggered == 0 && health.currentHealth <= 190)
         {
             overchargesTriggered = 1;
             TriggerOvercharge(5.0f);
         }
-        else if (overchargesTriggered == 1 && health.currentHealth <= 80)
+        else if (overchargesTriggered == 1 && health.currentHealth <= 130)
         {
             overchargesTriggered = 2;
+            TriggerOvercharge(5.0f);
+        }
+        else if (overchargesTriggered == 2 && health.currentHealth <= 75)
+        {
+            overchargesTriggered = 3;
             TriggerOvercharge(5.0f);
         }
     }
@@ -344,17 +432,18 @@ public class SpectralChildBossAI : MonoBehaviour
         float dist = toPlayer.magnitude;
 
         Vector2 dirToPlayer = toPlayer.normalized;
-        // Órbita sinusoidal suave y pausada alrededor del jugador (velocidad contenida de 1.35f)
         Vector2 tangent = new Vector2(-dirToPlayer.y, dirToPlayer.x);
         float orbitSign = Mathf.Sin(Time.time * 2.2f);
         Vector2 moveDir = (tangent * orbitSign * 0.75f + (dist > 3.0f ? dirToPlayer * 0.45f : (dist < 1.8f ? -dirToPlayer * 0.45f : Vector2.zero))).normalized;
 
-        Vector2 targetPos = currentPos + moveDir * (overchargeSpeed * Time.deltaTime);
+        float step = overchargeSpeed * Time.deltaTime;
+        moveDir = AdjustDirectionForObstacles(currentPos, moveDir, step);
+        Vector2 targetPos = currentPos + moveDir * step;
 
-        // Control de límites y anclaje al altar
         if (Vector2.Distance(targetPos, altarOrigin) > maxAltarLeash)
         {
-            targetPos = Vector2.MoveTowards(targetPos, altarOrigin, overchargeSpeed * Time.deltaTime);
+            Vector2 toAltar = AdjustDirectionForObstacles(currentPos, (altarOrigin - currentPos).normalized, step);
+            targetPos = currentPos + toAltar * step;
         }
 
         targetPos.x = Mathf.Clamp(targetPos.x, MinMapX, MaxMapX);
@@ -371,7 +460,6 @@ public class SpectralChildBossAI : MonoBehaviour
             animator.SetInteger("Direction", dir);
         }
 
-        // Pulso visual espectral
         if (visualRenderer != null)
         {
             float pulse = Mathf.PingPong(Time.time * 8f, 1f);
@@ -381,7 +469,6 @@ public class SpectralChildBossAI : MonoBehaviour
 
     private IEnumerator OverchargeRoutine(float duration)
     {
-        // Durante los 5 segundos de sobrecarga, dispara ráfagas combinadas continuas
         float volleyInterval = 0.95f;
         float nextVolleyTime = Time.time;
 
@@ -401,16 +488,13 @@ public class SpectralChildBossAI : MonoBehaviour
         if (visualRenderer != null)
             visualRenderer.color = normalAuraColor;
 
-        // Recompensa al jugador: dropea 1 corazón al completar la sobrecarga
         if (health != null && health.currentHealth > 0 && overchargesTriggered <= 2)
         {
             SpawnOverchargeOrbs(1);
         }
 
-        // Invocar refuerzos tras la sobrecarga
         TrySpawnBattleMinions();
 
-        // Breve pausa de recuperación
         yield return new WaitForSeconds(0.75f);
 
         CurrentState = BossState.Hovering;
@@ -450,7 +534,6 @@ public class SpectralChildBossAI : MonoBehaviour
         activeMinions.RemoveAll(m => m == null || m.IsDead);
         if (activeMinions.Count >= maxActiveMinions) return;
 
-        // Spawnea 1 duende normal y 1 duende gordito en puntos seguros
         SpawnMinion(false);
         if (activeMinions.Count < maxActiveMinions)
         {
@@ -470,11 +553,12 @@ public class SpectralChildBossAI : MonoBehaviour
         }
         if (pf == null) return;
 
-        float angle = Random.Range(0f, 360f) * Mathf.Deg2Rad;
-        float dist = Random.Range(2.8f, 4.5f);
-        Vector3 spawnPos = transform.position + new Vector3(Mathf.Cos(angle) * dist, Mathf.Sin(angle) * dist, 0f);
-        spawnPos.x = Mathf.Clamp(spawnPos.x, MinMapX, MaxMapX);
-        spawnPos.y = Mathf.Clamp(spawnPos.y, MinMapY, MaxMapY);
+        float angle = UnityEngine.Random.Range(0f, 360f) * Mathf.Deg2Rad;
+        float dist = UnityEngine.Random.Range(2.8f, 4.5f);
+        Vector2 candidate = (Vector2)transform.position + new Vector2(Mathf.Cos(angle) * dist, Mathf.Sin(angle) * dist);
+        candidate.x = Mathf.Clamp(candidate.x, MinMapX, MaxMapX);
+        candidate.y = Mathf.Clamp(candidate.y, MinMapY, MaxMapY);
+        Vector2 spawnPos = FindClearPosition(candidate);
 
         GameObject minionObj = Instantiate(pf, spawnPos, Quaternion.identity);
         EnemyHealth eh = minionObj.GetComponent<EnemyHealth>();
@@ -537,7 +621,7 @@ public class SpectralChildBossAI : MonoBehaviour
                 ? (dir.x > 0 ? 2 : 3)
                 : (dir.y > 0 ? 1 : 0);
             animator.SetInteger("Direction", dirInt);
-            animator.SetInteger("ActionState", 2); // Animación Child_Throw_... (Lanzamiento espectral)
+            animator.SetInteger("ActionState", 2);
         }
 
         if (audioSource != null && projectileClip != null)
@@ -554,7 +638,6 @@ public class SpectralChildBossAI : MonoBehaviour
             CurrentState = BossState.Hovering;
     }
 
-    // 1. Disparo simple
     private void SpawnSingleShot()
     {
         if (playerTransform == null) return;
@@ -563,7 +646,6 @@ public class SpectralChildBossAI : MonoBehaviour
         CreateProjectile(transform.position + (Vector3)dir * 0.45f, dir, 5.5f, projectileDamage);
     }
 
-    // 2. Disparo triple en abanico
     private void SpawnTripleSpread()
     {
         if (playerTransform == null) return;
@@ -575,7 +657,6 @@ public class SpectralChildBossAI : MonoBehaviour
         CreateProjectile(transform.position + (Vector3)baseDir * 0.45f, Quaternion.Euler(0, 0, -22f) * baseDir, 5.0f, projectileDamage);
     }
 
-    // 3. Disparo circular (Nova 360)
     private void SpawnNova360(int count)
     {
         Vector2 toPlayer = playerTransform != null ? (playerTransform.position - transform.position).normalized : Vector2.down;
@@ -590,7 +671,6 @@ public class SpectralChildBossAI : MonoBehaviour
         }
     }
 
-    // 4. Ráfaga corta rápida
     private IEnumerator BurstRoutine(int shots, float delay)
     {
         for (int i = 0; i < shots; i++)
@@ -605,7 +685,7 @@ public class SpectralChildBossAI : MonoBehaviour
 
     private void CreateProjectile(Vector3 pos, Vector2 direction, float speed, int damage)
     {
-        GameObject projObj = null;
+        GameObject projObj;
         if (projectilePrefab != null)
         {
             projObj = Instantiate(projectilePrefab, pos, Quaternion.identity);
@@ -623,51 +703,171 @@ public class SpectralChildBossAI : MonoBehaviour
 
     #endregion
 
-    #region Contacto y Muerte
+    #region Cinemática de Derrota y Desvanecimiento Espectral
 
     private void OnTriggerStay2D(Collider2D other)
     {
-        // El niño espectral no realiza ataques cuerpo a cuerpo de cerca; ataca puramente con energía mágica
         if (CurrentState == BossState.Spawning || CurrentState == BossState.Dying) return;
     }
 
     private void HandleDeath(EnemyHealth _)
     {
+        if (CurrentState == BossState.Dying) return;
         CurrentState = BossState.Dying;
         StopAllCoroutines();
+
+        // Limpiar esbirros invocados activos para que no interrumpan la cinemática
+        foreach (var minion in activeMinions)
+        {
+            if (minion != null && minion.gameObject != null)
+            {
+                Destroy(minion.gameObject);
+            }
+        }
+        activeMinions.Clear();
+
+        // Eliminar proyectiles espectrales en vuelo
+        foreach (var proj in FindObjectsOfType<SpectralProjectile>())
+        {
+            if (proj != null) Destroy(proj.gameObject);
+        }
+
         StartCoroutine(DeathRoutine());
     }
 
     private IEnumerator DeathRoutine()
     {
         if (bodyCollider != null) bodyCollider.enabled = false;
+        if (rb != null) rb.velocity = Vector2.zero;
         if (animator != null)
         {
             animator.SetBool("IsMoving", false);
             animator.SetInteger("ActionState", 0);
+            animator.SetInteger("Direction", 0);
         }
 
-        // Destello de derrota y desvanecimiento
-        float t = 0f;
-        while (t < 1.2f)
+        if (audioSource != null)
         {
-            t += Time.deltaTime;
-            float alpha = Mathf.Clamp01(1f - (t / 1.2f));
+            if (overchargeClip != null) audioSource.PlayOneShot(overchargeClip, 0.9f * AudioManager.EnemyVolume);
+            if (laughClip != null) audioSource.PlayOneShot(laughClip, 0.75f * AudioManager.EnemyVolume);
+        }
+
+        Vector3 startPos = transform.position;
+        Vector3 startScale = transform.localScale;
+
+        // Crear halo espectral y partículas de alma ascendentes para la cinemática de desvanecimiento
+        GameObject auraObj = new GameObject("BossDeathAura");
+        auraObj.transform.SetParent(transform, false);
+        auraObj.transform.localPosition = new Vector3(0f, 0.35f, 0f);
+        SpriteRenderer auraSr = auraObj.AddComponent<SpriteRenderer>();
+        auraSr.sprite = GetOrCreateSoftGlowSprite();
+        auraSr.sortingLayerName = "Layer 1";
+        auraSr.sortingOrder = visualRenderer != null ? visualRenderer.sortingOrder - 1 : 1;
+        auraSr.color = new Color(0.35f, 0.9f, 1f, 0.75f);
+
+        List<Transform> wisps = new List<Transform>();
+        List<SpriteRenderer> wispRenderers = new List<SpriteRenderer>();
+        for (int i = 0; i < 8; i++)
+        {
+            GameObject w = new GameObject($"SoulWisp_{i}");
+            w.transform.position = startPos + new Vector3(UnityEngine.Random.Range(-0.4f, 0.4f), UnityEngine.Random.Range(0f, 0.5f), 0f);
+            w.transform.localScale = Vector3.one * UnityEngine.Random.Range(0.22f, 0.38f);
+            SpriteRenderer wsr = w.AddComponent<SpriteRenderer>();
+            wsr.sprite = GetOrCreateSoftGlowSprite();
+            wsr.sortingLayerName = "Layer 1";
+            wsr.sortingOrder = visualRenderer != null ? visualRenderer.sortingOrder + 1 : 3;
+            wsr.color = new Color(0.55f, 0.95f, 1f, 0.85f);
+            wisps.Add(w.transform);
+            wispRenderers.Add(wsr);
+        }
+
+        // Cinemática de desaparición lenta (2.4 segundos)
+        float duration = 2.4f;
+        float elapsed = 0f;
+
+        while (elapsed < duration)
+        {
+            float dt = Time.unscaledDeltaTime > 0f ? Time.unscaledDeltaTime : 0.016f;
+            elapsed += dt;
+            float p = Mathf.Clamp01(elapsed / duration);
+
+            // Temblor etéreo que disminuye conforme se eleva y se disipa
+            float tremor = Mathf.Sin(elapsed * 42f) * 0.055f * (1f - p * 0.6f);
+            float riseY = Mathf.SmoothStep(0f, 0.65f, p);
+            transform.position = startPos + new Vector3(tremor, riseY, 0f);
+
+            // Pulso luminoso entre cian espectral y blanco antes de desvanecerse lentamente
+            float alpha = Mathf.Pow(1f - p, 1.25f);
+            float flash = Mathf.PingPong(elapsed * 6f, 1f);
             if (visualRenderer != null)
             {
-                visualRenderer.color = new Color(0.3f, 0.8f, 1f, alpha);
+                Color c = Color.Lerp(new Color(0.3f, 0.88f, 1f, 1f), Color.white, flash * 0.65f);
+                c.a = alpha;
+                visualRenderer.color = c;
             }
-            transform.localScale = Vector3.one * (1f + t * 0.35f);
+
+            // Ligero estiramiento ascendente al evaporarse
+            transform.localScale = new Vector3(
+                startScale.x * Mathf.Lerp(1f, 0.72f, p),
+                startScale.y * Mathf.Lerp(1f, 1.28f, p),
+                1f
+            );
+
+            if (auraSr != null)
+            {
+                float auraScale = Mathf.Lerp(1.2f, 2.8f, p);
+                auraObj.transform.localScale = new Vector3(auraScale, auraScale, 1f);
+                auraSr.color = new Color(0.4f, 0.95f, 1f, (1f - p) * 0.75f);
+            }
+
+            for (int i = 0; i < wisps.Count; i++)
+            {
+                if (wisps[i] == null) continue;
+                float angle = elapsed * 3.2f + i * (Mathf.PI * 2f / wisps.Count);
+                float radius = Mathf.Lerp(0.45f, 0.12f, p);
+                wisps[i].position = transform.position + new Vector3(
+                    Mathf.Cos(angle) * radius,
+                    0.25f + (elapsed * (0.45f + (i % 3) * 0.15f)) % 1.1f,
+                    0f
+                );
+                wispRenderers[i].color = new Color(0.6f, 0.96f, 1f, (1f - p) * 0.85f);
+            }
+
             yield return null;
         }
 
-        // Dropear Poción de Vida Completa
-        HealthPickup.SpawnDrop(transform.position + Vector3.left * 0.9f, HealthPickup.HealMode.FullHealth);
+        foreach (var w in wisps)
+        {
+            if (w != null) Destroy(w.gameObject);
+        }
 
-        // Dropear Machete (35 DMG)
-        WeaponPickup.SpawnWeaponDrop(WeaponType.Machete, transform.position + Vector3.right * 0.9f);
-
+        OnDeathCinematicFinished?.Invoke(startPos);
         Destroy(gameObject);
+    }
+
+    private static Sprite GetOrCreateSoftGlowSprite()
+    {
+        if (softGlowSprite != null) return softGlowSprite;
+
+        int size = 32;
+        Texture2D tex = new Texture2D(size, size, TextureFormat.RGBA32, false);
+        tex.filterMode = FilterMode.Bilinear;
+        Vector2 center = new Vector2((size - 1) * 0.5f, (size - 1) * 0.5f);
+        float maxR = size * 0.5f;
+
+        for (int y = 0; y < size; y++)
+        {
+            for (int x = 0; x < size; x++)
+            {
+                float d = Vector2.Distance(new Vector2(x, y), center) / maxR;
+                float a = Mathf.Clamp01(1f - d);
+                a = a * a;
+                tex.SetPixel(x, y, new Color(1f, 1f, 1f, a));
+            }
+        }
+        tex.Apply();
+        softGlowSprite = Sprite.Create(tex, new Rect(0, 0, size, size), new Vector2(0.5f, 0.5f), 24f);
+        return softGlowSprite;
     }
 
     #endregion

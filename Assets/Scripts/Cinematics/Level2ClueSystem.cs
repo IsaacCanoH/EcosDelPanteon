@@ -28,7 +28,6 @@ public class Level2ClueSystem : MonoBehaviour
             }
         }
 
-        // Si no hay Level2IntroSequence en la escena, mostrar la pista inicial tras breve espera
         if (Level2IntroSequence.Instance == null && FindObjectOfType<Level2IntroSequence>() == null)
         {
             Invoke(nameof(ShowInitialClue), 1.6f);
@@ -48,7 +47,6 @@ public class Level2ClueSystem : MonoBehaviour
         if (Level2HUD.IntroSequencePlaying) return;
         if (ParchmentMessageUI.Instance != null && ParchmentMessageUI.Instance.ChangedThisFrame) return;
 
-        // Al presionar P en cualquier momento, alternar la pista activa pausando o reanudando el juego
         if (Input.GetKeyDown(KeyCode.P) || GameControls.CluePressed)
         {
             if (ParchmentMessageUI.Instance != null && ParchmentMessageUI.Instance.IsOpen)
@@ -96,13 +94,17 @@ public class Level2ClueSystem : MonoBehaviour
         }
         else if (count >= 3)
         {
-            ParchmentMessageUI.Instance.Show(
-                "PUERTA ABIERTA",
-                "Has recuperado los 3 juguetes perdidos. Dirígete a la reja del acceso oeste para salir del panteón.",
-                null,
-                null,
-                true
-            );
+            var weapons = collector != null ? collector.GetComponent<PlayerWeaponController>() : null;
+            if (weapons != null && !weapons.hasMachete)
+            {
+                ParchmentMessageUI.Instance.Show(
+                    "FALTA EL MACHETE",
+                    "Has recuperado el último juguete. Recoge también el Machete junto al altar para abrir la puerta derecha de salida.",
+                    null,
+                    null,
+                    true
+                );
+            }
         }
     }
 
@@ -145,8 +147,8 @@ public class Level2ClueSystem : MonoBehaviour
         else
         {
             ParchmentMessageUI.Instance.Show(
-                "PUERTA ABIERTA",
-                "Has recuperado los 3 juguetes perdidos. Dirígete a la reja del acceso oeste para salir del panteón.",
+                "SALIDA DEL PANTEÓN",
+                "Recoge los 3 juguetes y el Machete en el último altar para que la puerta derecha del panteón se abra.",
                 null,
                 null,
                 true
