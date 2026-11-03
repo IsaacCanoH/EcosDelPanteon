@@ -71,6 +71,7 @@ public class WeaponPickup : MonoBehaviour
         string objName = weapon == WeaponType.Machete ? "Pickup_Machete" : "Pickup_CuchilloGrande";
         GameObject drop = new GameObject(objName);
         drop.transform.position = position;
+        drop.transform.localScale = weapon == WeaponType.BigKnife ? Vector3.one * 0.60f : Vector3.one * 0.85f;
 
         SpriteRenderer sr = drop.AddComponent<SpriteRenderer>();
         sr.sprite = weapon == WeaponType.Machete ? GetOrCreateMacheteSprite() : GetOrCreateKnifeSprite();

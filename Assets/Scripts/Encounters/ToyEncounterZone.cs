@@ -351,7 +351,7 @@ public class ToyEncounterZone : MonoBehaviour
             {
                 ParchmentMessageUI.Instance.Show(
                     "CUCHILLO DESBLOQUEADO",
-                    "Has derrotado a los soldados de La Llorona.\nRecoge el Cuchillo Grande y el primer juguete del altar.\nPulsa 1: Farol o 2: Cuchillo.",
+                    "Has derrotado a los soldados de La Llorona.\nRecoge el Cuchillo y el primer juguete del altar.\nPulsa 1: Farol (17 DMG) o 2: Cuchillo (26 DMG).",
                     null,
                     null,
                     true

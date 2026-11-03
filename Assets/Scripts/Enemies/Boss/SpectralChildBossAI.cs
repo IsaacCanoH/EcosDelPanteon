@@ -16,12 +16,19 @@ public class SpectralChildBossAI : MonoBehaviour
     }
 
     [Header("Estadísticas de Combate")]
-    public int contactDamage = 20;
+    public int contactDamage = 15;
     public int projectileDamage = 15;
-    public float baseMoveSpeed = 2.4f;
-    public float overchargeSpeed = 4.8f;
-    public float idealDistanceMin = 3.2f;
-    public float idealDistanceMax = 6.2f;
+    public float baseMoveSpeed = 1.15f;
+    public float overchargeSpeed = 1.35f;
+    public float idealDistanceMin = 2.0f;
+    public float idealDistanceMax = 3.8f;
+    public float maxAltarLeash = 6.2f;
+
+    [Header("Límites del Mapa (Bardas Perimetrales)")]
+    public const float MinMapX = -16.8f;
+    public const float MaxMapX = 16.8f;
+    public const float MinMapY = -7.6f;
+    public const float MaxMapY = 7.6f;
 
     [Header("Ataques y Proyectiles")]
     public GameObject projectilePrefab;
@@ -31,8 +38,8 @@ public class SpectralChildBossAI : MonoBehaviour
     public SpriteRenderer visualRenderer;
     public Color normalAuraColor = new Color(0.7f, 0.9f, 1f, 0.95f);
     public Color overchargeAuraColor = new Color(0.2f, 0.7f, 1f, 1f);
-    public float bobAmplitude = 0.18f;
-    public float bobFrequency = 3.6f;
+    public float bobAmplitude = 0.14f;
+    public float bobFrequency = 3.2f;
 
     public AudioClip projectileClip;
     public AudioClip laughClip;
@@ -41,7 +48,7 @@ public class SpectralChildBossAI : MonoBehaviour
 
     [Header("Invocación de Refuerzos Durante la Pelea")]
     public GameObject goblinPrefab;
-    public float minionSpawnInterval = 13.0f;
+    public float minionSpawnInterval = 14.0f;
     public int maxActiveMinions = 4;
 
     public BossState CurrentState { get; private set; } = BossState.Spawning;
@@ -59,8 +66,8 @@ public class SpectralChildBossAI : MonoBehaviour
     private Transform playerTransform;
     private PlayerHealth playerHealth;
 
+    private Vector2 altarOrigin;
     private float nextAttackTime;
-    private float contactDamageCooldown;
     private float nextMinionSpawnTime;
     private float nextStepSoundTime;
     private int attackCycleIndex = 0;
@@ -82,8 +89,12 @@ public class SpectralChildBossAI : MonoBehaviour
         if (audioSource == null) audioSource = gameObject.AddComponent<AudioSource>();
         audioSource.playOnAwake = false;
 
+        // Configuración física para colisionar de manera sólida con los muros perimetrales
+        rb.bodyType = RigidbodyType2D.Dynamic;
         rb.gravityScale = 0f;
-        rb.isKinematic = true;
+        rb.isKinematic = false;
+        rb.constraints = RigidbodyConstraints2D.FreezeRotation;
+        rb.collisionDetectionMode = CollisionDetectionMode2D.Continuous;
 
         if (visualRenderer == null)
             visualRenderer = GetComponentInChildren<SpriteRenderer>();
@@ -118,6 +129,12 @@ public class SpectralChildBossAI : MonoBehaviour
 
     private void Start()
     {
+        // Anclar punto de origen en el altar del tercer encuentro
+        altarOrigin = transform.position;
+        var altarZone = FindObjectOfType<ToyEncounterZone>();
+        if (altarZone != null && altarZone.bossSpawnPoint != null)
+            altarOrigin = altarZone.bossSpawnPoint.position;
+
         GameObject p = GameObject.FindGameObjectWithTag("Player");
         if (p != null)
         {
@@ -133,7 +150,7 @@ public class SpectralChildBossAI : MonoBehaviour
         }
         BossHealthBarUI.Instance.BindBoss(health, "NIÑO ESPECTRAL");
 
-        nextMinionSpawnTime = Time.time + 8.0f;
+        nextMinionSpawnTime = Time.time + 9.0f;
         StartCoroutine(SpawnIntroRoutine());
     }
 
@@ -196,14 +213,14 @@ public class SpectralChildBossAI : MonoBehaviour
             return;
         }
 
-        // Verificación de fase de desesperación (últimos 30 de vida: sobrecarga cada 5s que dura 3s)
+        // Verificación de fase de desesperación (últimos 30 de vida: sobrecarga cada 7s que dura 5s)
         if (health.currentHealth <= 30 && Time.time >= nextDesperationOverchargeTime)
         {
-            TriggerOvercharge(3.0f);
+            TriggerOvercharge(5.0f);
             return;
         }
 
-        // Movimiento de acecho normal con animaciones
+        // Movimiento de acecho lento y contenido cerca del altar y del jugador
         UpdateNormalMovement();
 
         // Ciclo de ataques a distancia
@@ -215,40 +232,53 @@ public class SpectralChildBossAI : MonoBehaviour
 
     private void UpdateNormalMovement()
     {
-        Vector2 toPlayer = (Vector2)playerTransform.position - (Vector2)transform.position;
-        float dist = toPlayer.magnitude;
+        Vector2 currentPos = rb.position;
+        Vector2 toPlayer = (Vector2)playerTransform.position - currentPos;
+        float distToPlayer = toPlayer.magnitude;
 
-        Vector2 targetPos = transform.position;
-        bool isMoving = false;
+        Vector2 moveDir = Vector2.zero;
 
-        if (dist > idealDistanceMax)
+        // Comportamiento de distancia respecto al jugador (no se aleja, orbita y acosa lentamente)
+        if (distToPlayer > idealDistanceMax)
         {
-            // Acercarse
-            targetPos = Vector2.MoveTowards(transform.position, playerTransform.position, baseMoveSpeed * Time.deltaTime);
-            isMoving = true;
+            // Acercarse suavemente al jugador
+            moveDir = toPlayer.normalized;
         }
-        else if (dist < idealDistanceMin)
+        else if (distToPlayer < idealDistanceMin)
         {
-            // Alejarse suavemente manteniendo distancia
-            targetPos = Vector2.MoveTowards(transform.position, (Vector2)transform.position - toPlayer.normalized, (baseMoveSpeed * 0.9f) * Time.deltaTime);
-            isMoving = true;
+            // Retroceder ligeramente manteniendo el espacio
+            moveDir = -toPlayer.normalized * 0.8f;
         }
         else
         {
-            // Flotar lateralmente en órbita
+            // Orbitar lateralmente alrededor del jugador
             Vector2 tangent = new Vector2(-toPlayer.y, toPlayer.x).normalized;
-            targetPos = (Vector2)transform.position + tangent * (baseMoveSpeed * 0.55f * Time.deltaTime);
-            isMoving = true;
+            moveDir = tangent * 0.55f;
         }
 
-        // Aplicar movimiento y animaciones del niño
-        Vector2 moveDelta = targetPos - (Vector2)transform.position;
-        transform.position = new Vector3(targetPos.x, targetPos.y + Mathf.Sin(Time.time * bobFrequency) * (bobAmplitude * Time.deltaTime), 0f);
+        Vector2 targetPos = currentPos + moveDir * (baseMoveSpeed * Time.deltaTime);
 
+        // Anclaje al altar: no alejarse demasiado de la zona del tercer altar
+        float distFromAltar = Vector2.Distance(targetPos, altarOrigin);
+        if (distFromAltar > maxAltarLeash)
+        {
+            targetPos = Vector2.MoveTowards(targetPos, altarOrigin, baseMoveSpeed * 1.1f * Time.deltaTime);
+        }
+
+        // Restringir dentro de las bardas perimetrales del cementerio
+        targetPos.x = Mathf.Clamp(targetPos.x, MinMapX, MaxMapX);
+        targetPos.y = Mathf.Clamp(targetPos.y, MinMapY, MaxMapY);
+
+        // Mover a través del Rigidbody2D para respetar la física y colisiones con los muros
+        rb.MovePosition(targetPos);
+
+        // Actualizar orientación y animación de paso
         if (animator != null)
         {
-            animator.SetBool("IsMoving", isMoving && moveDelta.sqrMagnitude > 0.00001f);
-            if (isMoving && moveDelta.sqrMagnitude > 0.00001f)
+            bool isMoving = moveDir.sqrMagnitude > 0.001f;
+            animator.SetBool("IsMoving", isMoving);
+
+            if (isMoving)
             {
                 int dir = Mathf.Abs(toPlayer.x) > Mathf.Abs(toPlayer.y)
                     ? (toPlayer.x > 0 ? 2 : 3)
@@ -257,7 +287,7 @@ public class SpectralChildBossAI : MonoBehaviour
 
                 if (Time.time >= nextStepSoundTime && audioSource != null && stepClip != null)
                 {
-                    nextStepSoundTime = Time.time + 0.42f;
+                    nextStepSoundTime = Time.time + 0.48f;
                     audioSource.PlayOneShot(stepClip, 0.35f * AudioManager.EnemyVolume);
                 }
             }
@@ -270,8 +300,8 @@ public class SpectralChildBossAI : MonoBehaviour
 
         // Activación de sobrecarga cada 50 de vida perdida:
         // Vida max = 180.
-        // Primer umbral: <= 130 HP (ha perdido 50 HP) -> 5s duración
-        // Segundo umbral: <= 80 HP (ha perdido 100 HP) -> 8s duración
+        // Primer umbral: <= 130 HP -> 5 segundos de sobrecarga
+        // Segundo umbral: <= 80 HP -> 5 segundos de sobrecarga
         if (overchargesTriggered == 0 && health.currentHealth <= 130)
         {
             overchargesTriggered = 1;
@@ -280,16 +310,16 @@ public class SpectralChildBossAI : MonoBehaviour
         else if (overchargesTriggered == 1 && health.currentHealth <= 80)
         {
             overchargesTriggered = 2;
-            TriggerOvercharge(8.0f);
+            TriggerOvercharge(5.0f);
         }
     }
 
-    private void TriggerOvercharge(float duration)
+    private void TriggerOvercharge(float duration = 5.0f)
     {
         isInOvercharge = true;
         CurrentState = BossState.Overcharging;
         overchargeEndTime = Time.time + duration;
-        nextDesperationOverchargeTime = overchargeEndTime + 5.0f;
+        nextDesperationOverchargeTime = overchargeEndTime + 7.0f;
 
         if (visualRenderer != null)
         {
@@ -307,43 +337,60 @@ public class SpectralChildBossAI : MonoBehaviour
 
     private void UpdateOvercharge()
     {
-        // Movimiento descontrolado y rápido en zigzag alrededor del jugador
-        Vector2 dirToPlayer = ((Vector2)playerTransform.position - (Vector2)transform.position).normalized;
-        Vector2 chaoticDir = Quaternion.Euler(0, 0, Mathf.Sin(Time.time * 8f) * 85f) * dirToPlayer;
+        if (playerTransform == null) return;
 
-        transform.position += (Vector3)(chaoticDir * (overchargeSpeed * Time.deltaTime));
+        Vector2 currentPos = rb.position;
+        Vector2 toPlayer = (Vector2)playerTransform.position - currentPos;
+        float dist = toPlayer.magnitude;
+
+        Vector2 dirToPlayer = toPlayer.normalized;
+        // Órbita sinusoidal suave y pausada alrededor del jugador (velocidad contenida de 1.35f)
+        Vector2 tangent = new Vector2(-dirToPlayer.y, dirToPlayer.x);
+        float orbitSign = Mathf.Sin(Time.time * 2.2f);
+        Vector2 moveDir = (tangent * orbitSign * 0.75f + (dist > 3.0f ? dirToPlayer * 0.45f : (dist < 1.8f ? -dirToPlayer * 0.45f : Vector2.zero))).normalized;
+
+        Vector2 targetPos = currentPos + moveDir * (overchargeSpeed * Time.deltaTime);
+
+        // Control de límites y anclaje al altar
+        if (Vector2.Distance(targetPos, altarOrigin) > maxAltarLeash)
+        {
+            targetPos = Vector2.MoveTowards(targetPos, altarOrigin, overchargeSpeed * Time.deltaTime);
+        }
+
+        targetPos.x = Mathf.Clamp(targetPos.x, MinMapX, MaxMapX);
+        targetPos.y = Mathf.Clamp(targetPos.y, MinMapY, MaxMapY);
+
+        rb.MovePosition(targetPos);
 
         if (animator != null)
         {
             animator.SetBool("IsMoving", true);
-            int dir = Mathf.Abs(chaoticDir.x) > Mathf.Abs(chaoticDir.y)
-                ? (chaoticDir.x > 0 ? 2 : 3)
-                : (chaoticDir.y > 0 ? 1 : 0);
+            int dir = Mathf.Abs(toPlayer.x) > Mathf.Abs(toPlayer.y)
+                ? (toPlayer.x > 0 ? 2 : 3)
+                : (toPlayer.y > 0 ? 1 : 0);
             animator.SetInteger("Direction", dir);
         }
 
-        // Pulso visual agresivo
+        // Pulso visual espectral
         if (visualRenderer != null)
         {
-            float pulse = Mathf.PingPong(Time.time * 10f, 1f);
+            float pulse = Mathf.PingPong(Time.time * 8f, 1f);
             visualRenderer.color = Color.Lerp(overchargeAuraColor, Color.white, pulse);
         }
     }
 
     private IEnumerator OverchargeRoutine(float duration)
     {
-        float shootInterval = 0.50f;
-        float nextShoot = Time.time;
+        // Durante los 5 segundos de sobrecarga, dispara ráfagas combinadas continuas
+        float volleyInterval = 0.95f;
+        float nextVolleyTime = Time.time;
 
         while (Time.time < overchargeEndTime && health.currentHealth > 0)
         {
-            if (Time.time >= nextShoot)
+            if (Time.time >= nextVolleyTime && playerTransform != null)
             {
-                nextShoot = Time.time + shootInterval;
-                int rand = Random.Range(0, 3);
-                if (rand == 0) SpawnTripleSpread();
-                else if (rand == 1) SpawnNova360(8);
-                else SpawnSingleShot();
+                nextVolleyTime = Time.time + volleyInterval;
+                ExecuteCombinedOverchargeBarrage();
             }
             yield return null;
         }
@@ -354,9 +401,8 @@ public class SpectralChildBossAI : MonoBehaviour
         if (visualRenderer != null)
             visualRenderer.color = normalAuraColor;
 
-        // Fin de la sobrecarga: Dropea solo en las 2 sobrecargas principales por umbral (130 y 80 HP),
-        // evitando dropear orbes repetitivos cada 5 segundos durante la fase de desesperación (<= 30 HP)
-        if (health != null && health.currentHealth > 30 && overchargesTriggered <= 2)
+        // Recompensa al jugador: dropea 1 corazón al completar la sobrecarga
+        if (health != null && health.currentHealth > 0 && overchargesTriggered <= 2)
         {
             SpawnOverchargeOrbs(1);
         }
@@ -365,10 +411,29 @@ public class SpectralChildBossAI : MonoBehaviour
         TrySpawnBattleMinions();
 
         // Breve pausa de recuperación
-        yield return new WaitForSeconds(0.8f);
+        yield return new WaitForSeconds(0.75f);
 
         CurrentState = BossState.Hovering;
         nextAttackTime = Time.time + 1.0f;
+    }
+
+    private void ExecuteCombinedOverchargeBarrage()
+    {
+        if (playerTransform == null || health.currentHealth <= 0) return;
+
+        Vector2 dirToPlayer = ((Vector2)playerTransform.position - (Vector2)transform.position).normalized;
+        PlayAttackAnimationAndSound(dirToPlayer);
+
+        // 1. Disparo circular de 8 esferas en 360 grados
+        SpawnNova360(8);
+
+        // 2. Disparo triple en abanico dirigido al jugador
+        CreateProjectile(transform.position + (Vector3)dirToPlayer * 0.45f, dirToPlayer, 5.2f, projectileDamage);
+        CreateProjectile(transform.position + (Vector3)dirToPlayer * 0.45f, Quaternion.Euler(0, 0, 20f) * dirToPlayer, 5.0f, projectileDamage);
+        CreateProjectile(transform.position + (Vector3)dirToPlayer * 0.45f, Quaternion.Euler(0, 0, -20f) * dirToPlayer, 5.0f, projectileDamage);
+
+        // 3. Ráfaga directa de 3 proyectiles rápidos dirigidos al jugador
+        StartCoroutine(BurstRoutine(3, 0.12f));
     }
 
     private void SpawnOverchargeOrbs(int count = 1)
@@ -406,10 +471,10 @@ public class SpectralChildBossAI : MonoBehaviour
         if (pf == null) return;
 
         float angle = Random.Range(0f, 360f) * Mathf.Deg2Rad;
-        float dist = Random.Range(3.2f, 5.0f);
+        float dist = Random.Range(2.8f, 4.5f);
         Vector3 spawnPos = transform.position + new Vector3(Mathf.Cos(angle) * dist, Mathf.Sin(angle) * dist, 0f);
-        spawnPos.x = Mathf.Clamp(spawnPos.x, -17.5f, 17.5f);
-        spawnPos.y = Mathf.Clamp(spawnPos.y, -8.5f, 8.5f);
+        spawnPos.x = Mathf.Clamp(spawnPos.x, MinMapX, MaxMapX);
+        spawnPos.y = Mathf.Clamp(spawnPos.y, MinMapY, MaxMapY);
 
         GameObject minionObj = Instantiate(pf, spawnPos, Quaternion.identity);
         EnemyHealth eh = minionObj.GetComponent<EnemyHealth>();
@@ -455,7 +520,7 @@ public class SpectralChildBossAI : MonoBehaviour
                 nextAttackTime = Time.time + attackCooldown * 1.3f;
                 break;
             case 3:
-                SpawnNova360(12);
+                SpawnNova360(10);
                 nextAttackTime = Time.time + attackCooldown * 1.4f;
                 break;
         }
@@ -472,7 +537,7 @@ public class SpectralChildBossAI : MonoBehaviour
                 ? (dir.x > 0 ? 2 : 3)
                 : (dir.y > 0 ? 1 : 0);
             animator.SetInteger("Direction", dirInt);
-            animator.SetInteger("ActionState", 2); // Animación Child_Throw_...
+            animator.SetInteger("ActionState", 2); // Animación Child_Throw_... (Lanzamiento espectral)
         }
 
         if (audioSource != null && projectileClip != null)
@@ -495,7 +560,7 @@ public class SpectralChildBossAI : MonoBehaviour
         if (playerTransform == null) return;
         Vector2 dir = (playerTransform.position - transform.position).normalized;
         PlayAttackAnimationAndSound(dir);
-        CreateProjectile(transform.position + (Vector3)dir * 0.45f, dir, 5.8f, projectileDamage);
+        CreateProjectile(transform.position + (Vector3)dir * 0.45f, dir, 5.5f, projectileDamage);
     }
 
     // 2. Disparo triple en abanico
@@ -505,9 +570,9 @@ public class SpectralChildBossAI : MonoBehaviour
         Vector2 baseDir = (playerTransform.position - transform.position).normalized;
         PlayAttackAnimationAndSound(baseDir);
 
-        CreateProjectile(transform.position + (Vector3)baseDir * 0.45f, baseDir, 5.5f, projectileDamage);
-        CreateProjectile(transform.position + (Vector3)baseDir * 0.45f, Quaternion.Euler(0, 0, 22f) * baseDir, 5.2f, projectileDamage);
-        CreateProjectile(transform.position + (Vector3)baseDir * 0.45f, Quaternion.Euler(0, 0, -22f) * baseDir, 5.2f, projectileDamage);
+        CreateProjectile(transform.position + (Vector3)baseDir * 0.45f, baseDir, 5.2f, projectileDamage);
+        CreateProjectile(transform.position + (Vector3)baseDir * 0.45f, Quaternion.Euler(0, 0, 22f) * baseDir, 5.0f, projectileDamage);
+        CreateProjectile(transform.position + (Vector3)baseDir * 0.45f, Quaternion.Euler(0, 0, -22f) * baseDir, 5.0f, projectileDamage);
     }
 
     // 3. Disparo circular (Nova 360)
@@ -533,7 +598,7 @@ public class SpectralChildBossAI : MonoBehaviour
             if (health.currentHealth <= 0 || playerTransform == null) yield break;
             Vector2 dir = (playerTransform.position - transform.position).normalized;
             PlayAttackAnimationAndSound(dir);
-            CreateProjectile(transform.position + (Vector3)dir * 0.45f, dir, 6.4f, projectileDamage);
+            CreateProjectile(transform.position + (Vector3)dir * 0.45f, dir, 6.0f, projectileDamage);
             yield return new WaitForSeconds(delay);
         }
     }
@@ -562,20 +627,8 @@ public class SpectralChildBossAI : MonoBehaviour
 
     private void OnTriggerStay2D(Collider2D other)
     {
+        // El niño espectral no realiza ataques cuerpo a cuerpo de cerca; ataca puramente con energía mágica
         if (CurrentState == BossState.Spawning || CurrentState == BossState.Dying) return;
-        if (Time.time < contactDamageCooldown) return;
-
-        PlayerHealth ph = other.GetComponentInParent<PlayerHealth>();
-        if (ph != null && !ph.IsDead)
-        {
-            contactDamageCooldown = Time.time + 0.9f;
-            if (animator != null)
-            {
-                animator.SetInteger("ActionState", 1); // Child_Melee_...
-                StartCoroutine(ResetAttackStateRoutine(0.35f));
-            }
-            ph.TakeDamage(contactDamage);
-        }
     }
 
     private void HandleDeath(EnemyHealth _)
@@ -611,7 +664,7 @@ public class SpectralChildBossAI : MonoBehaviour
         // Dropear Poción de Vida Completa
         HealthPickup.SpawnDrop(transform.position + Vector3.left * 0.9f, HealthPickup.HealMode.FullHealth);
 
-        // Dropear Machete (25 DMG)
+        // Dropear Machete (35 DMG)
         WeaponPickup.SpawnWeaponDrop(WeaponType.Machete, transform.position + Vector3.right * 0.9f);
 
         Destroy(gameObject);
