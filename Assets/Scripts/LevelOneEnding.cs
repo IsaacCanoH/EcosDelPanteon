@@ -36,6 +36,7 @@ public class LevelOneEnding : MonoBehaviour
     [Min(0.1f)] public float fadeSeconds = 1f;
     [Min(0.1f)] public float exitSpeed = 3f;
     public string menuScene = "MenuPrincipal";
+    public string nextLevelScene = "Cementerio_Nivel2";
 
     public EndingState State { get; private set; }
     public bool ExitFinished { get; private set; }
@@ -187,7 +188,7 @@ public class LevelOneEnding : MonoBehaviour
     {
         resultBackdrop.transform.SetAsLastSibling();
         resultPanel.transform.SetAsLastSibling();
-        retryLabel.text = "REINTENTAR";
+        retryLabel.text = victory ? "CONTINUAR" : "REINTENTAR";
         resultTitle.text = victory ? "VICTORIA" : "DERROTA";
         resultText.text = victory
             ? "Recuperaste las tres monedas.\nEl panteón vuelve a estar en calma."
@@ -370,12 +371,8 @@ public class LevelOneEnding : MonoBehaviour
         if (victoryCelebration != null) victoryCelebration.Hide();
         ExitFinished = true;
         State = EndingState.Finished;
-        if (Application.isEditor)
-        {
-            ShowResult(true, true);
-            PauseResult();
-        }
-        else Application.Quit();
+        ShowResult(true, true);
+        PauseResult();
     }
 
     private void PauseResult()
@@ -398,6 +395,15 @@ public class LevelOneEnding : MonoBehaviour
         if (loading || (State != EndingState.Defeat && State != EndingState.Finished)) return;
         loading = true;
         RestoreClock();
+
+        // Al finalizar el Nivel 1 con Victoria, el botón CONTINUAR pasa directamente al Nivel 2
+        if (State == EndingState.Finished && !string.IsNullOrEmpty(nextLevelScene) &&
+            Application.CanStreamedLevelBeLoaded(nextLevelScene))
+        {
+            SceneManager.LoadScene(nextLevelScene);
+            return;
+        }
+
         SceneManager.LoadScene(gameObject.scene.name);
     }
 

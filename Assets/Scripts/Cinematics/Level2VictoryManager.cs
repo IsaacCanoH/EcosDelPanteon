@@ -304,20 +304,30 @@ public class Level2VictoryManager : MonoBehaviour
 
     private void ClearPropsInFrontOfEastGate()
     {
-        GameObject sceneRoot = GameObject.Find("SCENE");
-        if (sceneRoot == null) return;
-
-        foreach (Transform t in sceneRoot.GetComponentsInChildren<Transform>(true))
+        foreach (Transform t in FindObjectsOfType<Transform>(true))
         {
-            if (t == null || t == sceneRoot.transform) continue;
-            if (t.parent != sceneRoot.transform && t.parent.name != "Props") continue;
-            if (t.name.Contains("Barda") || t.name.Contains("Acceso")) continue;
+            if (t == null || t.gameObject == null) continue;
+            if (eastGateRoot != null && (t == eastGateRoot.transform || t.IsChildOf(eastGateRoot.transform)))
+                continue;
+
+            string n = t.name;
+            // No desactivar contenedores raíz ni tilemaps ni bardas
+            if (n == "SCENE" || n == "Props" || n == "Panteones familiares" ||
+                n.Contains("Barda") || n.Contains("Acceso") || n.StartsWith("Layer "))
+                continue;
+
+            // Identificar lápidas, ataúdes o props colocados frente a la puerta derecha (ej. Gravestone 01 en 18.7, -5.2 y Stone Coffin en 19.7, -6.5)
+            bool isGraveOrProp = n.Contains("Gravestone") || n.Contains("Coffin") || n.Contains("Tomb") ||
+                                 n.Contains("Stone") || n.Contains("Cross") || n.Contains("Monument") ||
+                                 (t.parent != null && (t.parent.name == "Panteones familiares" || t.parent.name == "Props"));
+
+            if (!isGraveOrProp) continue;
 
             Vector3 pos = t.position;
-            // Desactivar lápidas, ataúdes o arbustos sueltos que tapen el pasillo hacia la puerta derecha
-            if (pos.x >= 16.2f && pos.x <= 22.5f && pos.y >= -7.3f && pos.y <= -2.4f)
+            if (pos.x >= 16.0f && pos.x <= 22.6f && pos.y >= -7.4f && pos.y <= -2.4f)
             {
                 t.gameObject.SetActive(false);
+                Destroy(t.gameObject);
             }
         }
     }
@@ -746,7 +756,8 @@ public class Level2VictoryManager : MonoBehaviour
         }
         if (blackoutImage != null) blackoutImage.color = Color.black;
 
-        if (victoryCelebration != null) victoryCelebration.Hide();
+        // Mantener el título "¡VICTORIA!" arriba también en la pantalla final
+        if (victoryCelebration != null) victoryCelebration.Show();
 
         // 8. FASE 4 (Igual a la Imagen 3 del Nivel 1): Mostrar la tarjeta de pergamino sobre fondo negro con los botones
         ShowVictoryCard(showButtons: true, blackBackground: true);
@@ -778,7 +789,7 @@ public class Level2VictoryManager : MonoBehaviour
         if (victoryTitleText != null) victoryTitleText.text = "VICTORIA";
         if (victoryBodyText != null)
         {
-            victoryBodyText.text = "Recuperaste los tres juguetes.\nEl panteón vuelve a estar en\ncalma.";
+            victoryBodyText.text = "Recuperaste los tres juguetes.\nEl panteón vuelve a estar en calma.";
         }
 
         if (victoryHintText != null)
@@ -868,6 +879,7 @@ public class Level2VictoryManager : MonoBehaviour
         actionInProgress = true;
         Time.timeScale = 1f;
         AudioListener.pause = false;
+        ToyEncounterZone.ResetAllEncounterStatics();
 
         if (Application.CanStreamedLevelBeLoaded(nextSceneName))
         {
@@ -893,6 +905,7 @@ public class Level2VictoryManager : MonoBehaviour
         actionInProgress = true;
         Time.timeScale = 1f;
         AudioListener.pause = false;
+        ToyEncounterZone.ResetAllEncounterStatics();
         SceneManager.LoadScene(SceneManager.GetActiveScene().name);
     }
 
@@ -902,6 +915,7 @@ public class Level2VictoryManager : MonoBehaviour
         actionInProgress = true;
         Time.timeScale = 1f;
         AudioListener.pause = false;
+        ToyEncounterZone.ResetAllEncounterStatics();
         SceneManager.LoadScene(fallbackMenuSceneName);
     }
 
@@ -978,7 +992,7 @@ public class Level2VictoryManager : MonoBehaviour
             canvas.sortingOrder = 2100;
             var scaler = canvasObj.AddComponent<CanvasScaler>();
             scaler.uiScaleMode = CanvasScaler.ScaleMode.ScaleWithScreenSize;
-            scaler.referenceResolution = new Vector2(1920f, 1080f);
+            scaler.referenceResolution = new Vector2(1280f, 720f);
             scaler.matchWidthOrHeight = 0.5f;
             canvasObj.AddComponent<GraphicRaycaster>();
             transform.SetParent(canvasObj.transform, false);
@@ -998,14 +1012,51 @@ public class Level2VictoryManager : MonoBehaviour
         if (blackoutImage == null) blackoutImage = gameObject.AddComponent<Image>();
         blackoutImage.color = Color.clear;
 
-        // Confeti pixel-art de celebración (idéntico al Nivel 1)
-        GameObject celebObj = new GameObject("VictoryCelebration");
+        // Banner superior "¡VICTORIA!" + Confeti pixel-art de celebración (idéntico a Victoria_Pixel del Nivel 1)
+        GameObject celebObj = new GameObject("Victoria_Pixel");
         celebObj.transform.SetParent(transform, false);
         RectTransform celebRt = celebObj.AddComponent<RectTransform>();
-        celebRt.anchorMin = new Vector2(0.5f, 0.5f);
-        celebRt.anchorMax = new Vector2(0.5f, 0.5f);
-        celebRt.sizeDelta = new Vector2(720f, 320f);
+        celebRt.anchorMin = new Vector2(0.5f, 0.86f);
+        celebRt.anchorMax = new Vector2(0.5f, 0.86f);
+        celebRt.pivot = new Vector2(0.5f, 0.5f);
+        celebRt.anchoredPosition = Vector2.zero;
+        celebRt.sizeDelta = new Vector2(800f, 180f);
         celebObj.AddComponent<CanvasGroup>();
+
+        // Sombra del título "¡VICTORIA!" arriba
+        GameObject shadowTitleObj = new GameObject("Victoria_Sombra");
+        shadowTitleObj.transform.SetParent(celebObj.transform, false);
+        RectTransform shadowRt = shadowTitleObj.AddComponent<RectTransform>();
+        shadowRt.anchorMin = new Vector2(0.5f, 0.5f);
+        shadowRt.anchorMax = new Vector2(0.5f, 0.5f);
+        shadowRt.pivot = new Vector2(0.5f, 0.5f);
+        shadowRt.anchoredPosition = new Vector2(3f, -3f);
+        shadowRt.sizeDelta = new Vector2(720f, 90f);
+        TextMeshProUGUI shadowTmp = shadowTitleObj.AddComponent<TextMeshProUGUI>();
+        if (pixelFont != null) shadowTmp.font = pixelFont;
+        shadowTmp.text = "¡VICTORIA!";
+        shadowTmp.alignment = TextAlignmentOptions.Center;
+        shadowTmp.fontSize = 48f;
+        shadowTmp.color = new Color(0.153f, 0.114f, 0.067f, 1f);
+        shadowTmp.raycastTarget = false;
+
+        // Texto principal "¡VICTORIA!" arriba (dorado brillante)
+        GameObject mainTopTitleObj = new GameObject("Victoria_Texto");
+        mainTopTitleObj.transform.SetParent(celebObj.transform, false);
+        RectTransform mainTopRt = mainTopTitleObj.AddComponent<RectTransform>();
+        mainTopRt.anchorMin = new Vector2(0.5f, 0.5f);
+        mainTopRt.anchorMax = new Vector2(0.5f, 0.5f);
+        mainTopRt.pivot = new Vector2(0.5f, 0.5f);
+        mainTopRt.anchoredPosition = Vector2.zero;
+        mainTopRt.sizeDelta = new Vector2(720f, 90f);
+        TextMeshProUGUI mainTopTmp = mainTopTitleObj.AddComponent<TextMeshProUGUI>();
+        if (pixelFont != null) mainTopTmp.font = pixelFont;
+        mainTopTmp.text = "¡VICTORIA!";
+        mainTopTmp.alignment = TextAlignmentOptions.Center;
+        mainTopTmp.fontSize = 48f;
+        mainTopTmp.color = new Color(0.957f, 0.851f, 0.565f, 1f);
+        mainTopTmp.raycastTarget = false;
+
         victoryCelebration = celebObj.AddComponent<VictoryCelebration>();
 
         // Tarjeta de pergamino con sello rojo a la izquierda (CartaAntigua_Sello.png, 620x252, igual que en Nivel 1 / Imagen 3)
@@ -1015,8 +1066,9 @@ public class Level2VictoryManager : MonoBehaviour
         cardRect.anchorMin = new Vector2(0.5f, 0.5f);
         cardRect.anchorMax = new Vector2(0.5f, 0.5f);
         cardRect.pivot = new Vector2(0.5f, 0.5f);
-        cardRect.anchoredPosition = new Vector2(0f, 10f);
+        cardRect.anchoredPosition = new Vector2(0f, -10f);
         cardRect.sizeDelta = new Vector2(620f, 252f);
+        cardRect.localScale = new Vector3(1.22f, 1.22f, 1f);
 
         cardCanvasGroup = cardObj.AddComponent<CanvasGroup>();
         cardBackground = cardObj.AddComponent<Image>();
@@ -1030,65 +1082,65 @@ public class Level2VictoryManager : MonoBehaviour
             cardBackground.color = new Color32(230, 217, 184, 255);
         }
 
-        // Título "VICTORIA" (alineado a la izquierda sobre el pergamino igual que en Imagen 3)
+        // Título "VICTORIA" (alineado a la izquierda sobre el pergamino igual que en Nivel 1)
         GameObject titleObj = new GameObject("Titulo_Resultado");
         titleObj.transform.SetParent(cardObj.transform, false);
         RectTransform titleRt = titleObj.AddComponent<RectTransform>();
-        titleRt.anchorMin = new Vector2(0f, 1f);
-        titleRt.anchorMax = new Vector2(1f, 1f);
-        titleRt.pivot = new Vector2(0.5f, 1f);
-        titleRt.anchoredPosition = new Vector2(18f, -24f);
-        titleRt.sizeDelta = new Vector2(-196f, 28f);
+        titleRt.anchorMin = new Vector2(0.5f, 0.5f);
+        titleRt.anchorMax = new Vector2(0.5f, 0.5f);
+        titleRt.pivot = new Vector2(0.5f, 0.5f);
+        titleRt.anchoredPosition = new Vector2(34f, 88f);
+        titleRt.sizeDelta = new Vector2(500f, 30f);
         victoryTitleText = titleObj.AddComponent<TextMeshProUGUI>();
         if (pixelFont != null) victoryTitleText.font = pixelFont;
         victoryTitleText.text = "VICTORIA";
-        victoryTitleText.alignment = TextAlignmentOptions.Left;
-        victoryTitleText.fontSize = 14f;
-        victoryTitleText.color = new Color(0.545f, 0.369f, 0.2f, 1f);
+        victoryTitleText.alignment = TextAlignmentOptions.TopLeft;
+        victoryTitleText.fontSize = 18f;
+        victoryTitleText.color = new Color(0.5f, 0.36f, 0.2f, 1f);
 
-        // Texto principal del pergamino
+        // Texto principal del pergamino (grande y claro igual que en Nivel 1)
         GameObject bodyObj = new GameObject("Texto_Resultado");
         bodyObj.transform.SetParent(cardObj.transform, false);
         RectTransform bodyRt = bodyObj.AddComponent<RectTransform>();
-        bodyRt.anchorMin = new Vector2(0f, 0f);
-        bodyRt.anchorMax = new Vector2(1f, 1f);
+        bodyRt.anchorMin = new Vector2(0.5f, 0.5f);
+        bodyRt.anchorMax = new Vector2(0.5f, 0.5f);
         bodyRt.pivot = new Vector2(0.5f, 0.5f);
-        bodyRt.anchoredPosition = new Vector2(18f, 8f);
-        bodyRt.sizeDelta = new Vector2(-196f, -126f);
+        bodyRt.anchoredPosition = new Vector2(34f, 6f);
+        bodyRt.sizeDelta = new Vector2(500f, 124f);
         victoryBodyText = bodyObj.AddComponent<TextMeshProUGUI>();
         if (pixelFont != null) victoryBodyText.font = pixelFont;
-        victoryBodyText.text = "Recuperaste los tres juguetes.\nEl panteón vuelve a estar en\ncalma.";
+        victoryBodyText.text = "Recuperaste los tres juguetes.\nEl panteón vuelve a estar en calma.";
         victoryBodyText.alignment = TextAlignmentOptions.TopLeft;
-        victoryBodyText.fontSize = 12f;
+        victoryBodyText.fontSize = 16f;
         victoryBodyText.lineSpacing = 12f;
-        victoryBodyText.color = new Color(0.286f, 0.204f, 0.098f, 1f);
+        victoryBodyText.color = new Color(0.23f, 0.18f, 0.13f, 1f);
         victoryBodyText.enableWordWrapping = true;
 
         // Texto inferior durante la primera parte de la cinemática ("ABANDONANDO EL PANTEÓN...")
         GameObject hintObj = new GameObject("Ayuda_Resultado");
         hintObj.transform.SetParent(cardObj.transform, false);
         RectTransform hintRt = hintObj.AddComponent<RectTransform>();
-        hintRt.anchorMin = new Vector2(0f, 0f);
-        hintRt.anchorMax = new Vector2(1f, 0f);
-        hintRt.pivot = new Vector2(0.5f, 0f);
-        hintRt.anchoredPosition = new Vector2(18f, 24f);
-        hintRt.sizeDelta = new Vector2(-196f, 24f);
+        hintRt.anchorMin = new Vector2(0.5f, 0.5f);
+        hintRt.anchorMax = new Vector2(0.5f, 0.5f);
+        hintRt.pivot = new Vector2(0.5f, 0.5f);
+        hintRt.anchoredPosition = new Vector2(34f, -92f);
+        hintRt.sizeDelta = new Vector2(500f, 32f);
         victoryHintText = hintObj.AddComponent<TextMeshProUGUI>();
         if (pixelFont != null) victoryHintText.font = pixelFont;
         victoryHintText.text = "ABANDONANDO EL PANTEÓN...";
-        victoryHintText.alignment = TextAlignmentOptions.Left;
-        victoryHintText.fontSize = 10f;
-        victoryHintText.color = new Color(0.545f, 0.369f, 0.2f, 1f);
+        victoryHintText.alignment = TextAlignmentOptions.TopLeft;
+        victoryHintText.fontSize = 13f;
+        victoryHintText.color = new Color(0.23f, 0.18f, 0.13f, 1f);
 
-        // Fila inferior de botones dentro del pergamino (idéntica a Imagen 3: REINTENTAR, MENU PRINCIPAL, SALIR + SIGUIENTE)
+        // Fila inferior de botones dentro del pergamino (idéntica a Imagen 3: REINTENTAR, MENU PRINCIPAL, SIGUIENTE, SALIR)
         buttonRowObj = new GameObject("Botones_Resultado");
         buttonRowObj.transform.SetParent(cardObj.transform, false);
         RectTransform rowRt = buttonRowObj.AddComponent<RectTransform>();
-        rowRt.anchorMin = new Vector2(0f, 0f);
-        rowRt.anchorMax = new Vector2(1f, 0f);
-        rowRt.pivot = new Vector2(0.5f, 0f);
-        rowRt.anchoredPosition = new Vector2(28f, 18f);
-        rowRt.sizeDelta = new Vector2(-148f, 34f);
+        rowRt.anchorMin = new Vector2(0.5f, 0.5f);
+        rowRt.anchorMax = new Vector2(0.5f, 0.5f);
+        rowRt.pivot = new Vector2(0.5f, 0.5f);
+        rowRt.anchoredPosition = new Vector2(34f, -92f);
+        rowRt.sizeDelta = new Vector2(500f, 34f);
 
         var layout = buttonRowObj.AddComponent<HorizontalLayoutGroup>();
         layout.spacing = 8f;
@@ -1100,22 +1152,22 @@ public class Level2VictoryManager : MonoBehaviour
 
         retryButton = CreateParchmentButton(
             buttonRowObj.transform, "Boton_Reintentar", "REINTENTAR",
-            primaryBtnNormal, pixelFont, 8.5f, out retryBtnRt, out retryBtnImg);
+            primaryBtnNormal, pixelFont, 11f, out retryBtnRt, out retryBtnImg);
         retryButton.onClick.AddListener(OnRetryClicked);
 
         menuButton = CreateParchmentButton(
             buttonRowObj.transform, "Boton_Menu", "MENU PRINCIPAL",
-            secondaryBtnNormal, pixelFont, 7.2f, out menuBtnRt, out menuBtnImg);
+            secondaryBtnNormal, pixelFont, 9.5f, out menuBtnRt, out menuBtnImg);
         menuButton.onClick.AddListener(OnMenuClicked);
 
         nextLevelButton = CreateParchmentButton(
             buttonRowObj.transform, "Boton_Siguiente", "SIGUIENTE",
-            primaryBtnNormal, pixelFont, 8.5f, out nextBtnRt, out nextBtnImg);
+            primaryBtnNormal, pixelFont, 11f, out nextBtnRt, out nextBtnImg);
         nextLevelButton.onClick.AddListener(OnNextLevelClicked);
 
         quitButton = CreateParchmentButton(
             buttonRowObj.transform, "Boton_Salir", "SALIR",
-            secondaryBtnNormal, pixelFont, 8.5f, out quitBtnRt, out quitBtnImg);
+            secondaryBtnNormal, pixelFont, 11f, out quitBtnRt, out quitBtnImg);
         quitButton.onClick.AddListener(OnQuitClicked);
     }
 
@@ -1150,7 +1202,10 @@ public class Level2VictoryManager : MonoBehaviour
         tmp.text = label;
         tmp.alignment = TextAlignmentOptions.Center;
         tmp.fontSize = fontSize;
-        tmp.color = new Color32(238, 228, 202, 255);
+        tmp.enableAutoSizing = true;
+        tmp.fontSizeMin = 8f;
+        tmp.fontSizeMax = fontSize;
+        tmp.color = new Color(1f, 0.91f, 0.65f, 1f);
         tmp.enableWordWrapping = false;
         tmp.raycastTarget = false;
 

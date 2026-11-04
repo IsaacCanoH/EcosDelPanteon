@@ -46,6 +46,7 @@ public class SpectralChildBossAI : MonoBehaviour
     public AudioClip laughClip;
     public AudioClip overchargeClip;
     public AudioClip stepClip;
+    public AudioClip bossBattleMusicClip;
 
     [Header("Invocación de Refuerzos Durante la Pelea")]
     public GameObject goblinPrefab;
@@ -56,6 +57,15 @@ public class SpectralChildBossAI : MonoBehaviour
     public event Action<Vector3> OnDeathCinematicFinished;
 
     private static Sprite softGlowSprite;
+    private static AudioClip cachedProceduralBossMusic;
+
+    // Estado guardado de la música de fondo original del nivel para restaurarla al terminar el combate
+    private AudioSource savedBgMusicSource;
+    private AudioClip savedBgMusicClip;
+    private float savedBgMusicTime;
+    private float savedBgMusicVolume;
+    private float savedBgMusicPitch = 1f;
+    private bool bossMusicActive = false;
 
     public void TakeDamage(int damage)
     {
@@ -179,6 +189,9 @@ public class SpectralChildBossAI : MonoBehaviour
         }
         BossHealthBarUI.Instance.BindBoss(health, "NIÑO ESPECTRAL");
 
+        // Cambiar la música de fondo a un tema de batalla emocionante durante el combate contra el Niño Espectral
+        StartBossBattleMusic();
+
         nextMinionSpawnTime = Time.time + 9.0f;
         StartCoroutine(SpawnIntroRoutine());
     }
@@ -248,6 +261,11 @@ public class SpectralChildBossAI : MonoBehaviour
 
     private void OnDestroy()
     {
+        if (bossMusicActive)
+        {
+            RestoreOriginalBackgroundMusic();
+        }
+
         if (health != null)
         {
             health.OnDamageTaken -= HandleDamageTaken;
@@ -841,8 +859,201 @@ public class SpectralChildBossAI : MonoBehaviour
             if (w != null) Destroy(w.gameObject);
         }
 
+        // Restaurar la canción de fondo original del nivel cuando finaliza el combate
+        RestoreOriginalBackgroundMusic();
+
         OnDeathCinematicFinished?.Invoke(startPos);
         Destroy(gameObject);
+    }
+
+    public void StartBossBattleMusic()
+    {
+        if (bossMusicActive) return;
+
+        GameObject bgmObj = GameObject.Find("BackgroundMusic");
+        if (bgmObj != null)
+        {
+            savedBgMusicSource = bgmObj.GetComponent<AudioSource>();
+        }
+
+        if (savedBgMusicSource == null)
+        {
+            foreach (var src in FindObjectsOfType<AudioSource>())
+            {
+                if (src != null && src.loop && src.isPlaying && src.gameObject != gameObject)
+                {
+                    savedBgMusicSource = src;
+                    break;
+                }
+            }
+        }
+
+        if (savedBgMusicSource == null) return;
+
+        savedBgMusicClip = savedBgMusicSource.clip;
+        savedBgMusicTime = savedBgMusicSource.time;
+        savedBgMusicVolume = savedBgMusicSource.volume;
+        savedBgMusicPitch = savedBgMusicSource.pitch;
+
+        AudioClip battleClip = bossBattleMusicClip != null
+            ? bossBattleMusicClip
+            : GetOrCreateProceduralBossBattleMusicClip();
+
+        if (battleClip != null)
+        {
+            bossMusicActive = true;
+            savedBgMusicSource.Stop();
+            savedBgMusicSource.clip = battleClip;
+            savedBgMusicSource.loop = true;
+            savedBgMusicSource.pitch = 1.0f;
+            savedBgMusicSource.volume = Mathf.Max(savedBgMusicVolume, AudioManager.MusicVolume * 0.65f);
+            savedBgMusicSource.time = 0f;
+            savedBgMusicSource.Play();
+        }
+    }
+
+    public void RestoreOriginalBackgroundMusic()
+    {
+        if (!bossMusicActive) return;
+        bossMusicActive = false;
+
+        if (savedBgMusicSource != null && savedBgMusicClip != null)
+        {
+            savedBgMusicSource.Stop();
+            savedBgMusicSource.clip = savedBgMusicClip;
+            savedBgMusicSource.loop = true;
+            savedBgMusicSource.pitch = savedBgMusicPitch;
+            savedBgMusicSource.volume = savedBgMusicVolume > 0.01f ? savedBgMusicVolume : (AudioManager.MusicVolume * 0.55f);
+            if (savedBgMusicClip.length > 0.2f)
+            {
+                savedBgMusicSource.time = Mathf.Clamp(savedBgMusicTime, 0f, savedBgMusicClip.length - 0.1f);
+            }
+            savedBgMusicSource.Play();
+        }
+    }
+
+    /// <summary>
+    /// Sintetiza un tema de batalla gótico/espectral de alta energía en Re menor armónico (150 BPM, loop perfecto de 12.8s)
+    /// con bajo ostinato, órgano/clavecín rápido en semicorcheas, motivo Dies Irae y percusión rítmica de combate.
+    /// </summary>
+    private static AudioClip GetOrCreateProceduralBossBattleMusicClip()
+    {
+        if (cachedProceduralBossMusic != null) return cachedProceduralBossMusic;
+
+        const int sampleRate = 22050;
+        const float stepDuration = 0.10f; // 150 BPM -> 1 semicorchea = 0.10s
+        const int totalSteps = 128;       // 8 compases de 16 semicorcheas = 12.8s loop exacto
+        int totalSamples = Mathf.RoundToInt(totalSteps * stepDuration * sampleRate);
+
+        float[] samples = new float[totalSamples];
+
+        // Progresión armónica gótica de 8 compases en Re menor armónico (MIDI notes):
+        // Compases 0-1: Dm (D, F, A)
+        // Compases 2-3: Bb (Bb, D, F)
+        // Compases 4-5: Gm (G, Bb, D)
+        // Compás 6:     Edim7 / Bb7 (G, Bb, C#, E)
+        // Compás 7:     A7 (A, C#, E, G)
+        int[] bassRoots = { 38, 38, 34, 34, 43, 43, 37, 33 }; // D2, D2, Bb1, Bb1, G2, G2, C#2, A1
+
+        int[][] arpChords = new int[][]
+        {
+            new int[] { 62, 65, 69, 74 }, // Dm: D4, F4, A4, D5
+            new int[] { 62, 69, 74, 77 }, // Dm: D4, A4, D5, F5
+            new int[] { 58, 62, 65, 70 }, // Bb: Bb3, D4, F4, Bb4
+            new int[] { 58, 65, 70, 74 }, // Bb: Bb3, F4, Bb4, D5
+            new int[] { 55, 58, 62, 67 }, // Gm: G3, Bb3, D4, G4
+            new int[] { 58, 62, 67, 70 }, // Gm: Bb3, D4, G4, Bb4
+            new int[] { 55, 58, 61, 64 }, // Edim7: G3, Bb3, C#4, E4
+            new int[] { 57, 61, 64, 69 }  // A: A3, C#4, E4, A4
+        };
+
+        // Melodía principal (variación intensa tipo Dies Irae / Lacrimosa en corcheas, 64 notas para los 8 compases)
+        int[] leadMelody64 = new int[]
+        {
+            // Compás 0-1 (Dm)
+            77, 76, 77, 74,  76, 73, 74, 69,   77, 79, 81, 79,  77, 76, 74, 74,
+            // Compás 2-3 (Bb)
+            74, 72, 74, 70,  72, 69, 70, 65,   74, 76, 77, 76,  74, 72, 70, 70,
+            // Compás 4-5 (Gm)
+            79, 77, 79, 74,  77, 74, 70, 67,   74, 77, 79, 82,  81, 79, 77, 74,
+            // Compás 6 (Edim7) y Compás 7 (A7 -> Dm)
+            76, 73, 76, 79,  82, 79, 76, 73,   81, 79, 76, 73,  74, 76, 79, 81
+        };
+
+        uint rngState = 0x13579BDFu;
+
+        for (int i = 0; i < totalSamples; i++)
+        {
+            float t = i / (float)sampleRate;
+            int step = Mathf.Clamp((int)(t / stepDuration), 0, totalSteps - 1);
+            float stepTime = t - step * stepDuration;
+            float stepNorm = stepTime / stepDuration; // 0..1 dentro de la semicorchea
+
+            int bar = (step / 16) % 8;
+            int stepInBar = step % 16;
+
+            // 1. BAJO OSTINATO EN OCTAVAS (pulsante en cada semicorchea)
+            int bassMidi = bassRoots[bar] + ((stepInBar % 2 == 1) ? 12 : 0);
+            if (stepInBar == 14 || stepInBar == 15) bassMidi += 7;
+            float bassFreq = 440f * Mathf.Pow(2f, (bassMidi - 69) / 12f);
+            float bassEnv = Mathf.Exp(-stepNorm * 3.2f);
+            float bassWave = (Mathf.Sin(2f * Mathf.PI * bassFreq * t) * 0.65f +
+                              Mathf.Sign(Mathf.Sin(2f * Mathf.PI * bassFreq * t)) * 0.35f) * bassEnv * 0.28f;
+
+            // 2. ARPEGIO RÁPIDO DE ÓRGANO / CLAVECÍN GÓTICO (semicorcheas)
+            int[] chord = arpChords[bar];
+            int arpIdx = (stepInBar % 4 == 3) ? 1 : (stepInBar % 4);
+            int arpMidi = chord[arpIdx];
+            float arpFreq = 440f * Mathf.Pow(2f, (arpMidi - 69) / 12f);
+            float arpEnv = Mathf.Exp(-stepNorm * 4.5f);
+            float arpWave = (Mathf.Sin(2f * Mathf.PI * arpFreq * t) +
+                             0.5f * Mathf.Sin(4f * Mathf.PI * arpFreq * t) +
+                             0.25f * Mathf.Sin(6f * Mathf.PI * arpFreq * t)) * arpEnv * 0.16f;
+
+            // 3. MELODÍA LÍDER ESPECTRAL (corcheas con vibrato dramático)
+            int leadStep = (step / 2) % 64;
+            int leadMidi = leadMelody64[leadStep];
+            float eighthTime = t - (step / 2) * (stepDuration * 2f);
+            float eighthNorm = eighthTime / (stepDuration * 2f);
+            float vibrato = 1f + Mathf.Sin(2f * Mathf.PI * 6.5f * t) * 0.0045f;
+            float leadFreq = 440f * Mathf.Pow(2f, (leadMidi - 69) / 12f) * vibrato;
+            float leadEnv = Mathf.Clamp01(eighthNorm * 14f) * Mathf.Exp(-eighthNorm * 1.85f);
+            float leadWave = (Mathf.Sin(2f * Mathf.PI * leadFreq * t) * 0.6f +
+                              0.35f * Mathf.Sin(4f * Mathf.PI * leadFreq * t) +
+                              0.15f * Mathf.Sin(6f * Mathf.PI * leadFreq * t)) * leadEnv * 0.24f;
+
+            // 4. PERCUSIÓN DE COMBATE (Bombo en 0, 6, 8, 14; Caja en 4 y 12; Hi-hat en cada semicorchea)
+            float drumWave = 0f;
+
+            // Kick (Bombo profundo)
+            if (stepInBar == 0 || stepInBar == 6 || stepInBar == 8 || stepInBar == 14)
+            {
+                float kickPitch = Mathf.Lerp(135f, 42f, Mathf.Clamp01(stepTime * 18f));
+                float kickEnv = Mathf.Exp(-stepTime * 22f);
+                drumWave += Mathf.Sin(2f * Mathf.PI * kickPitch * stepTime) * kickEnv * 0.34f;
+            }
+
+            // Snare (Caja de impacto en tiempos 2 y 4 -> pasos 4 y 12)
+            rngState = rngState * 1664525u + 1013904223u;
+            float whiteNoise = ((rngState & 0xFFFFu) / 32768f) - 1f;
+            if (stepInBar == 4 || stepInBar == 12)
+            {
+                float snareEnv = Mathf.Exp(-stepTime * 28f);
+                float snareBody = Mathf.Sin(2f * Mathf.PI * 185f * stepTime) * Mathf.Exp(-stepTime * 35f);
+                drumWave += (whiteNoise * 0.75f * snareEnv + snareBody * 0.25f) * 0.26f;
+            }
+
+            // Hi-hat metálico rápido
+            float hatEnv = Mathf.Exp(-stepTime * (stepInBar % 2 == 0 ? 55f : 75f));
+            drumWave += whiteNoise * hatEnv * 0.06f;
+
+            float mix = bassWave + arpWave + leadWave + drumWave;
+            samples[i] = Mathf.Clamp(mix * 0.92f, -0.95f, 0.95f);
+        }
+
+        cachedProceduralBossMusic = AudioClip.Create("BossBattleTheme_NinoEspectral", totalSamples, 1, sampleRate, false);
+        cachedProceduralBossMusic.SetData(samples, 0);
+        return cachedProceduralBossMusic;
     }
 
     private static Sprite GetOrCreateSoftGlowSprite()

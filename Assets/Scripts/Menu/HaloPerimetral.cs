@@ -22,6 +22,7 @@ public class HaloPerimetral : MaskableGraphic,
     protected override void OnEnable()
     {
         base.OnEnable();
+        raycastTarget = true;
         encima = seleccionado = false;
         intensidad = disponible ? 0.45f : 0.18f;
         realce = 0f;

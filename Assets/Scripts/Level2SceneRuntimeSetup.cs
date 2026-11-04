@@ -27,6 +27,10 @@ public static class Level2SceneRuntimeSetup
         if (string.IsNullOrEmpty(scene.name) || !scene.name.Contains("Nivel2"))
             return;
 
+        Time.timeScale = 1f;
+        AudioListener.pause = false;
+        ToyEncounterZone.ResetAllEncounterStatics();
+
         int obstaclesLayer = LayerMask.NameToLayer("Obstacles");
         if (obstaclesLayer < 0) obstaclesLayer = 6;
 

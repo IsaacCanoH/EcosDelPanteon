@@ -152,6 +152,9 @@ public class PlayerDeathScreenUI : MonoBehaviour
     public void OnRetryClicked()
     {
         Time.timeScale = 1f;
+        AudioListener.pause = false;
+        ToyEncounterZone.ResetAllEncounterStatics();
+
         Scene currentScene = SceneManager.GetActiveScene();
         string sceneName = string.IsNullOrEmpty(currentScene.name) ? "Cementerio_Nivel2" : currentScene.name;
         SceneManager.LoadScene(sceneName);
@@ -160,6 +163,9 @@ public class PlayerDeathScreenUI : MonoBehaviour
     public void OnMenuClicked()
     {
         Time.timeScale = 1f;
+        AudioListener.pause = false;
+        ToyEncounterZone.ResetAllEncounterStatics();
+
         string targetMenu = string.IsNullOrEmpty(menuSceneName) ? "MenuPrincipal" : menuSceneName;
         SceneManager.LoadScene(targetMenu);
     }
@@ -167,6 +173,8 @@ public class PlayerDeathScreenUI : MonoBehaviour
     public void OnQuitClicked()
     {
         Time.timeScale = 1f;
+        AudioListener.pause = false;
+        ToyEncounterZone.ResetAllEncounterStatics();
 #if UNITY_EDITOR
         UnityEditor.EditorApplication.isPlaying = false;
 #else
