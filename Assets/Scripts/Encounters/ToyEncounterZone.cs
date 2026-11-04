@@ -7,6 +7,14 @@ public class ToyEncounterZone : MonoBehaviour
     public static int GlobalEncountersCompleted = 0;
     public static bool IsAnyEncounterActive = false;
     private static GameObject globalCachedBossPrefab;
+    private static int lastSceneResetFrame = -1;
+
+    public static void ResetAllEncounterStatics()
+    {
+        GlobalEncountersCompleted = 0;
+        IsAnyEncounterActive = false;
+        Level2HUD.IntroSequencePlaying = false;
+    }
 
     [Header("Identificación del Encuentro")]
     [Range(0, 2)] public int encounterIndex = 0; // 0 = Encuentro 1, 1 = Encuentro 2, 2 = Encuentro 3
@@ -48,6 +56,17 @@ public class ToyEncounterZone : MonoBehaviour
 
     private void Awake()
     {
+        if (lastSceneResetFrame != Time.frameCount)
+        {
+            lastSceneResetFrame = Time.frameCount;
+            ResetAllEncounterStatics();
+        }
+
+        triggered = false;
+        bossDefeatSequenceStarted = false;
+        currentSearchTimer = 0f;
+        isPlayerSearching = false;
+
         if (targetToy != null)
         {
             targetToy.gameObject.SetActive(false);

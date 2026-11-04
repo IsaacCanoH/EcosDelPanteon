@@ -370,6 +370,37 @@ public class MenuPrincipal : MonoBehaviour
         Transform btnTr = parent.Find(nombreBoton);
         if (btnTr == null) return;
 
+        // Asegurar que el gráfico del botón (HaloPerimetral) tenga raycastTarget = true (en Boton_Duende estaba en 0)
+        Graphic btnGraphic = btnTr.GetComponent<Graphic>();
+        if (btnGraphic != null)
+        {
+            btnGraphic.raycastTarget = true;
+        }
+
+        HaloPerimetral halo = btnTr.GetComponent<HaloPerimetral>();
+        if (halo != null)
+        {
+            halo.raycastTarget = true;
+            if (nombreBoton == "Boton_Duende" || nombreBoton == "Boton_Nino")
+                halo.disponible = true;
+        }
+
+        Button btn = btnTr.GetComponent<Button>();
+        if (btn != null)
+        {
+            btn.interactable = true;
+            if (btnGraphic != null && btn.targetGraphic == null)
+                btn.targetGraphic = btnGraphic;
+
+            if (btn.onClick.GetPersistentEventCount() == 0)
+            {
+                if (nombreBoton == "Boton_Duende")
+                    btn.onClick.AddListener(() => AbrirNivel("Cementerio_Nivel1"));
+                else if (nombreBoton == "Boton_Nino")
+                    btn.onClick.AddListener(() => AbrirNivel("Cementerio_Nivel2"));
+            }
+        }
+
         // Ocultar texto por defecto "Button" si existía
         Transform textoDefault = btnTr.Find("Text (TMP)");
         if (textoDefault != null)
@@ -390,7 +421,7 @@ public class MenuPrincipal : MonoBehaviour
 
             Image bg = badgeGo.AddComponent<Image>();
             bg.color = new Color(0.06f, 0.05f, 0.09f, 0.85f);
-            bg.raycastTarget = false;
+            bg.raycastTarget = true;
 
             // Borde superior de acento
             GameObject bordeGo = new GameObject("Borde_Acento");
