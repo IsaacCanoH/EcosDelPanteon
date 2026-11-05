@@ -322,7 +322,7 @@ public class MenuPrincipal : MonoBehaviour
         // 2. Decorar e identificar los 4 cuadrantes con badges claros
         ActualizarBadgeCuadrante(areaMenu, "Boton_Duende", ref badgeDuende, "NIVEL 1: EL DUENDE", "DISPONIBLE · CLIC PARA JUGAR", new Color(0.48f, 0.98f, 0.58f, 1f));
         ActualizarBadgeCuadrante(areaMenu, "Boton_Nino", ref badgeNino, "NIVEL 2: NIÑO ESPECTRAL", "DISPONIBLE · CLIC PARA JUGAR", new Color(0.48f, 0.85f, 0.98f, 1f));
-        ActualizarBadgeCuadrante(areaMenu, "Boton_Bruja", ref badgeBruja, "NIVEL 3: LA BRUJA", "BLOQUEADO · PRÓXIMAMENTE", new Color(0.75f, 0.65f, 0.92f, 0.8f));
+        ActualizarBadgeCuadrante(areaMenu, "Boton_Bruja", ref badgeBruja, "NIVEL 3: LA BRUJA", "DISPONIBLE · CLIC PARA JUGAR", new Color(0.82f, 0.52f, 1.0f, 1f));
         ActualizarBadgeCuadrante(areaMenu, "Boton_Llorona", ref badgeLlorona, "NIVEL 4: LA LLORONA", "BLOQUEADO · PRÓXIMAMENTE", new Color(0.95f, 0.65f, 0.75f, 0.8f));
 
         // 3. Crear Barra Inferior con Botón de Opciones y Salir
@@ -381,7 +381,7 @@ public class MenuPrincipal : MonoBehaviour
         if (halo != null)
         {
             halo.raycastTarget = true;
-            if (nombreBoton == "Boton_Duende" || nombreBoton == "Boton_Nino")
+            if (nombreBoton == "Boton_Duende" || nombreBoton == "Boton_Nino" || nombreBoton == "Boton_Bruja")
                 halo.disponible = true;
         }
 
@@ -392,7 +392,12 @@ public class MenuPrincipal : MonoBehaviour
             if (btnGraphic != null && btn.targetGraphic == null)
                 btn.targetGraphic = btnGraphic;
 
-            if (btn.onClick.GetPersistentEventCount() == 0)
+            if (nombreBoton == "Boton_Bruja")
+            {
+                btn.onClick = new Button.ButtonClickedEvent();
+                btn.onClick.AddListener(() => AbrirNivel("Cementerio_Nivel3"));
+            }
+            else if (btn.onClick.GetPersistentEventCount() == 0)
             {
                 if (nombreBoton == "Boton_Duende")
                     btn.onClick.AddListener(() => AbrirNivel("Cementerio_Nivel1"));

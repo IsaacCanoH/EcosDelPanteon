@@ -78,6 +78,20 @@ public class Level2VictoryManager : MonoBehaviour
     public const float SouthLeafY = -6.68f;
     public const float GateCenterY = -4.85f;
 
+    // Coordenadas de la Puerta de Salida Superior (Muro Norte) para el Nivel 3 (pegada exactamente al muro norte en Y = 12.0)
+    public const float TopGateCenterX = 0.0f;
+    public const float TopGateWallY = 12.05f;
+    public const float TopPillarWestX = -1.85f;
+    public const float TopPillarEastX = 1.85f;
+    public const float TopPillarY = 11.90f;
+
+    private static bool IsLevel3Scene()
+    {
+        string sceneName = SceneManager.GetActiveScene().name;
+        return sceneName.IndexOf("Nivel3", StringComparison.OrdinalIgnoreCase) >= 0 ||
+               sceneName.IndexOf("Level3", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
     private void Awake()
     {
         if (Instance != null && Instance != this)
@@ -87,6 +101,11 @@ public class Level2VictoryManager : MonoBehaviour
         }
         Instance = this;
 
+        if (IsLevel3Scene())
+        {
+            nextSceneName = "MenuPrincipal";
+        }
+
         SetupProceduralUIIfMissing();
         HideImmediate();
     }
@@ -94,7 +113,15 @@ public class Level2VictoryManager : MonoBehaviour
     private void Start()
     {
         FindPlayerReferences();
-        BuildEastExitGateIfMissing();
+        if (IsLevel3Scene())
+        {
+            EnsureWestEntranceGateOpen();  // Puerta de inicio en el lado izquierdo (Acceso Oeste)
+            BuildNorthExitGateIfMissing(); // Puerta de salida cerrada pegada al muro norte
+        }
+        else
+        {
+            BuildEastExitGateIfMissing();
+        }
     }
 
     private void FindPlayerReferences()
@@ -130,10 +157,21 @@ public class Level2VictoryManager : MonoBehaviour
         FindPlayerReferences();
         if (toyCollector == null || playerWeapons == null) return;
 
-        // La secuencia final inicia justo al recoger el 3er juguete Y el machete
-        if (toyCollector.Count >= 3 && playerWeapons.hasMachete)
+        if (IsLevel3Scene())
         {
-            TriggerVictorySequence();
+            // En el Nivel 3 ya se cuenta con el Machete desde el inicio; la victoria ocurre al recuperar los 3 juguetes tras derrotar a La Bruja
+            if (toyCollector.Count >= 3 && ToyEncounterZone.GlobalEncountersCompleted >= 3)
+            {
+                TriggerVictorySequence();
+            }
+        }
+        else
+        {
+            // En el Nivel 2 la secuencia final inicia justo al recoger el 3er juguete Y el machete
+            if (toyCollector.Count >= 3 && playerWeapons.hasMachete)
+            {
+                TriggerVictorySequence();
+            }
         }
     }
 
@@ -300,6 +338,68 @@ public class Level2VictoryManager : MonoBehaviour
         closedGateBlocker.isTrigger = false;
         closedGateBlocker.offset = new Vector2(EastLeafX, GateCenterY);
         closedGateBlocker.size = new Vector2(1.1f, 3.8f);
+    }
+
+    /// <summary>
+    /// En el Nivel 3 (La Bruja), la puerta de inicio está en el lado izquierdo (Acceso Oeste)
+    /// y la puerta de salida está en el muro superior (Acceso Norte).
+    /// Asegura que el acceso oeste esté activo, abierto y despejado para la entrada del jugador,
+    /// y elimina cualquier portal previo en el muro este, sellando la barda este como muro continuo.
+    /// </summary>
+    public void EnsureWestEntranceGateOpen()
+    {
+        // 1. Eliminar cualquier portal temporal en el muro este
+        GameObject oldEastInicio = GameObject.Find("Acceso_Este_Inicio");
+        if (oldEastInicio != null) Destroy(oldEastInicio);
+        GameObject oldEastSalida = GameObject.Find("Acceso_Este_Salida");
+        if (oldEastSalida != null) Destroy(oldEastSalida);
+
+        // 2. Asegurar que Barda Este sea un muro sólido continuo sin huecos
+        GameObject bardaEste = GameObject.Find("Barda este");
+        if (bardaEste != null)
+        {
+            var colliders = bardaEste.GetComponents<Collider2D>();
+            foreach (var c in colliders)
+            {
+                if (c != null) Destroy(c);
+            }
+            BoxCollider2D fullEastCol = bardaEste.AddComponent<BoxCollider2D>();
+            fullEastCol.size = new Vector2(0.5f, 26f);
+            fullEastCol.offset = new Vector2(0f, -0.5f);
+        }
+
+        // 3. Restaurar baldosas de muro en Layer 1 - Wall si habían sido recortadas en el muro este
+        GameObject wallObj = GameObject.Find("Layer 1 - Wall");
+        if (wallObj != null)
+        {
+            Tilemap wallTm = wallObj.GetComponent<Tilemap>();
+            if (wallTm != null)
+            {
+                TileBase sampleTile = wallTm.GetTile(new Vector3Int(21, 0, 0));
+                if (sampleTile == null) sampleTile = wallTm.GetTile(new Vector3Int(21, 5, 0));
+                if (sampleTile != null)
+                {
+                    for (int cx = 20; cx <= 22; cx++)
+                    {
+                        for (int cy = -6; cy <= -4; cy++)
+                        {
+                            wallTm.SetTile(new Vector3Int(cx, cy, 0), sampleTile);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 4. Asegurar que Acceso Oeste esté completamente activo, visible y abierto
+        GameObject accesoOeste = GameObject.Find("Acceso oeste");
+        if (accesoOeste != null)
+        {
+            accesoOeste.SetActive(true);
+            foreach (Transform child in accesoOeste.transform)
+            {
+                if (child != null) child.gameObject.SetActive(true);
+            }
+        }
     }
 
     private void ClearPropsInFrontOfEastGate()
@@ -527,13 +627,334 @@ public class Level2VictoryManager : MonoBehaviour
         return Sprite.Create(dstTex, new Rect(0, 0, dstW, dstH), new Vector2(1f, pivotY), 32f);
     }
 
+    /// <summary>
+    /// Construye la Puerta de Salida en el Muro Superior (Barda norte) para el Nivel 3 (La Bruja).
+    /// Permanece cerrada durante la partida y se abre con animación 2.5D en la cinemática final.
+    /// </summary>
+    public void BuildNorthExitGateIfMissing()
+    {
+        if (eastGateRoot != null) return;
+
+        GameObject oldNorth = GameObject.Find("Acceso_Norte_Salida");
+        if (oldNorth != null) Destroy(oldNorth);
+
+        eastGateRoot = new GameObject("Acceso_Norte_Salida");
+        eastGateRoot.transform.position = Vector3.zero;
+
+        // 1. Despejar árboles, tumbas o arbustos que obstruyan el pasillo hacia el muro norte (X entre -3.2 y 3.2, Y >= 5.5)
+        foreach (Transform t in FindObjectsOfType<Transform>(true))
+        {
+            if (t == null || t.gameObject == null) continue;
+            if (t == eastGateRoot.transform || t.IsChildOf(eastGateRoot.transform)) continue;
+
+            string n = t.name;
+            if (n == "SCENE" || n == "Props" || n == "Panteones familiares" ||
+                n.Contains("Barda") || n.Contains("Acceso") || n.StartsWith("Layer ") ||
+                n.StartsWith("Altar_Encounter_"))
+                continue;
+
+            bool isProp = n.Contains("Gravestone") || n.Contains("Coffin") || n.Contains("Tomb") ||
+                          n.Contains("Stone") || n.Contains("Cross") || n.Contains("Tree") ||
+                          n.Contains("Bush") || n.Contains("Bench") ||
+                          (t.parent != null && (t.parent.name == "Panteones familiares" || t.parent.name == "Props"));
+
+            if (!isProp) continue;
+
+            Vector3 pos = t.position;
+            if (pos.x >= -3.2f && pos.x <= 3.2f && pos.y >= 5.8f && pos.y <= 13.5f)
+            {
+                t.gameObject.SetActive(false);
+                Destroy(t.gameObject);
+            }
+        }
+
+        // 2. Abrir el pórtico en el muro superior (Layer 1 - Wall, Layer 2 - Wall y Layer 1 - Wall Shadow) y pintar el camino de piedra
+        string[] wallLayerNames = { "Layer 1 - Wall", "Layer 2 - Wall" };
+        foreach (string wlName in wallLayerNames)
+        {
+            GameObject wallObj = GameObject.Find(wlName);
+            if (wallObj != null)
+            {
+                Tilemap wallTm = wallObj.GetComponent<Tilemap>();
+                if (wallTm != null)
+                {
+                    for (int cx = -2; cx <= 1; cx++)
+                    {
+                        for (int cy = 10; cy <= 15; cy++)
+                        {
+                            wallTm.SetTile(new Vector3Int(cx, cy, 0), null);
+                        }
+                    }
+                }
+            }
+        }
+
+        GameObject shadowObj = GameObject.Find("Layer 1 - Wall Shadow");
+        if (shadowObj != null)
+        {
+            Tilemap shadowTm = shadowObj.GetComponent<Tilemap>();
+            if (shadowTm != null)
+            {
+                for (int cx = -2; cx <= 2; cx++)
+                {
+                    for (int cy = 9; cy <= 15; cy++)
+                    {
+                        shadowTm.SetTile(new Vector3Int(cx, cy, 0), null);
+                    }
+                }
+            }
+        }
+
+        GameObject stoneObj = GameObject.Find("Layer 1 - Stone Ground");
+        if (stoneObj != null)
+        {
+            Tilemap stoneTm = stoneObj.GetComponent<Tilemap>();
+            if (stoneTm != null)
+            {
+                TileBase midRowTile = stoneTm.GetTile(new Vector3Int(-18, -5, 0));
+                if (midRowTile == null)
+                {
+                    for (int sx = -15; sx <= 15 && midRowTile == null; sx++)
+                        for (int sy = -6; sy <= 6 && midRowTile == null; sy++)
+                            midRowTile = stoneTm.GetTile(new Vector3Int(sx, sy, 0));
+                }
+
+                if (midRowTile != null)
+                {
+                    for (int cx = -2; cx <= 1; cx++)
+                    {
+                        for (int cy = 3; cy <= 13; cy++)
+                        {
+                            stoneTm.SetTile(new Vector3Int(cx, cy, 0), midRowTile);
+                        }
+                    }
+                }
+            }
+        }
+
+        // 3. Tomar referencias de pilares, arbustos, material y tinte nocturno de "Acceso oeste"
+        GameObject accesoOeste = GameObject.Find("Acceso oeste");
+        Transform westPillarTemplate = null;
+        Transform westBushTemplate = null;
+        Material propsMat = null;
+        int sortingLayerID = SortingLayer.NameToID("Layer 1");
+        Color nightTint = new Color(0.6117647f, 0.6666667f, 0.78431374f, 1f);
+
+        if (accesoOeste != null)
+        {
+            for (int i = 0; i < accesoOeste.transform.childCount; i++)
+            {
+                Transform ch = accesoOeste.transform.GetChild(i);
+                if (ch.name.Contains("Pillar") && westPillarTemplate == null)
+                {
+                    westPillarTemplate = ch;
+                    SpriteRenderer sr = ch.GetComponentInChildren<SpriteRenderer>();
+                    if (sr != null)
+                    {
+                        propsMat = sr.sharedMaterial;
+                        sortingLayerID = sr.sortingLayerID;
+                        nightTint = sr.color;
+                    }
+                }
+                else if (ch.name.Contains("Bush") && westBushTemplate == null)
+                {
+                    westBushTemplate = ch;
+                }
+            }
+        }
+
+#if UNITY_EDITOR
+        if (westPillarTemplate == null)
+        {
+            GameObject pPf = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Cainos/Pixel Art Top Down - Basic/Prefab/Props/PF Props - Pillar 01.prefab");
+            if (pPf != null) westPillarTemplate = pPf.transform;
+        }
+#endif
+
+        // 4. Instanciar los 2 Pilares de Piedra flanqueando la puerta en el Muro Norte
+        if (westPillarTemplate != null)
+        {
+            GameObject leftPillar = Instantiate(westPillarTemplate.gameObject, eastGateRoot.transform);
+            leftPillar.name = "Pilar Norte - Oeste";
+            leftPillar.transform.position = new Vector3(TopPillarWestX, TopPillarY, 0f);
+            leftPillar.transform.localScale = new Vector3(0.85f, 0.85f, 1f);
+            foreach (var sr in leftPillar.GetComponentsInChildren<SpriteRenderer>(true))
+            {
+                sr.sortingLayerName = "Layer 1";
+                sr.sortingOrder = sr.name.Contains("Shadow") ? 1 : 3;
+            }
+
+            GameObject rightPillar = Instantiate(westPillarTemplate.gameObject, eastGateRoot.transform);
+            rightPillar.name = "Pilar Norte - Este";
+            rightPillar.transform.position = new Vector3(TopPillarEastX, TopPillarY, 0f);
+            rightPillar.transform.localScale = new Vector3(0.85f, 0.85f, 1f);
+            foreach (var sr in rightPillar.GetComponentsInChildren<SpriteRenderer>(true))
+            {
+                sr.sortingLayerName = "Layer 1";
+                sr.sortingOrder = sr.name.Contains("Shadow") ? 1 : 3;
+            }
+        }
+
+        if (westBushTemplate != null)
+        {
+            Vector3[] bushPos = new Vector3[]
+            {
+                new Vector3(-2.95f, 11.85f, 0f),
+                new Vector3( 2.95f, 11.85f, 0f)
+            };
+            for (int i = 0; i < bushPos.Length; i++)
+            {
+                GameObject b = Instantiate(westBushTemplate.gameObject, eastGateRoot.transform);
+                b.name = $"Bush Norte {i + 1}";
+                b.transform.position = bushPos[i];
+                foreach (var sr in b.GetComponentsInChildren<SpriteRenderer>(true))
+                {
+                    sr.sortingLayerName = "Layer 1";
+                    sr.sortingOrder = sr.name.Contains("Shadow") ? 1 : 2;
+                }
+            }
+        }
+
+        // 5. Generar los 10 frames 2.5D de las dos hojas de madera de la Puerta Norte (Oeste y Este)
+        GenerateNorthGateAnimationFrames(out northGateFrames, out southGateFrames);
+
+        GameObject westLeafObj = new GameObject("Puerta Norte - Hoja Oeste");
+        westLeafObj.transform.SetParent(eastGateRoot.transform, false);
+        westLeafObj.transform.position = new Vector3(-1.45f, TopGateWallY, 0f);
+        westLeafObj.transform.localScale = new Vector3(1.12f, 1.15f, 1f);
+        northLeafRenderer = westLeafObj.AddComponent<SpriteRenderer>();
+        northLeafRenderer.sprite = northGateFrames[0];
+        if (propsMat != null) northLeafRenderer.sharedMaterial = propsMat;
+        northLeafRenderer.sortingLayerID = sortingLayerID;
+        northLeafRenderer.sortingOrder = 2;
+        northLeafRenderer.color = nightTint;
+
+        GameObject eastLeafObj = new GameObject("Puerta Norte - Hoja Este");
+        eastLeafObj.transform.SetParent(eastGateRoot.transform, false);
+        eastLeafObj.transform.position = new Vector3(1.45f, TopGateWallY, 0f);
+        eastLeafObj.transform.localScale = new Vector3(1.12f, 1.15f, 1f);
+        southLeafRenderer = eastLeafObj.AddComponent<SpriteRenderer>();
+        southLeafRenderer.sprite = southGateFrames[0];
+        if (propsMat != null) southLeafRenderer.sharedMaterial = propsMat;
+        southLeafRenderer.sortingLayerID = sortingLayerID;
+        southLeafRenderer.sortingOrder = 2;
+        southLeafRenderer.color = nightTint;
+
+        // 6. Colisionador físico sólido que mantiene cerrada la puerta superior durante todo el Nivel 3
+        int obstaclesLayer = LayerMask.NameToLayer("Obstacles");
+        eastGateRoot.layer = obstaclesLayer >= 0 ? obstaclesLayer : 6;
+        closedGateBlocker = eastGateRoot.AddComponent<BoxCollider2D>();
+        closedGateBlocker.isTrigger = false;
+        closedGateBlocker.offset = new Vector2(TopGateCenterX, TopGateWallY);
+        closedGateBlocker.size = new Vector2(3.6f, 1.0f);
+    }
+
+    private static void GenerateNorthGateAnimationFrames(out Sprite[] westLeafFrames, out Sprite[] eastLeafFrames)
+    {
+        int frameCount = 10;
+        westLeafFrames = new Sprite[frameCount];
+        eastLeafFrames = new Sprite[frameCount];
+
+        for (int f = 0; f < frameCount; f++)
+        {
+            float t = f / (float)(frameCount - 1); // 0 = Cerrada en el muro norte, 1 = Abierta hacia arriba/adentro
+            westLeafFrames[f] = CreateNorthGateLeafFrame(t, isWestLeaf: true);
+            eastLeafFrames[f] = CreateNorthGateLeafFrame(t, isWestLeaf: false);
+        }
+    }
+
+    private static Sprite CreateNorthGateLeafFrame(float openProgress, bool isWestLeaf)
+    {
+        int w = 52;
+        int h = 68;
+        Texture2D tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
+        tex.filterMode = FilterMode.Point;
+        tex.wrapMode = TextureWrapMode.Clamp;
+
+        Color32[] pixels = new Color32[w * h];
+        Color woodDark = new Color(0.24f, 0.17f, 0.12f, 1f);
+        Color woodMid = new Color(0.36f, 0.27f, 0.20f, 1f);
+        Color woodLight = new Color(0.45f, 0.34f, 0.25f, 1f);
+        Color ironBand = new Color(0.16f, 0.18f, 0.23f, 1f);
+        Color ironRivet = new Color(0.32f, 0.36f, 0.44f, 1f);
+        Color spikeCol = new Color(0.14f, 0.15f, 0.19f, 1f);
+
+        // Cuando openProgress = 0 (cerrada): la hoja se extiende horizontalmente 42px hacia el centro (X = 0).
+        // Cuando openProgress = 1 (abierta): la hoja gira 82° hacia arriba/adentro abriendo el pórtico norte.
+        float angleRad = Mathf.Lerp(0f, 80f, openProgress) * Mathf.Deg2Rad;
+        int reachX = Mathf.Max(6, Mathf.RoundToInt(42f * Mathf.Cos(angleRad)));
+        float skewY = 26f * Mathf.Sin(angleRad);
+
+        int baseY = 8;
+        int doorBaseHeight = 32;
+
+        for (int dx = 0; dx < reachX; dx++)
+        {
+            float u = dx / (float)Mathf.Max(1, reachX - 1); // 0 en la bisagra junto al pilar, 1 en el centro de la puerta
+            int px = isWestLeaf ? (4 + dx) : (w - 5 - dx);
+            if (px < 0 || px >= w) continue;
+
+            int archAdd = Mathf.RoundToInt(Mathf.Sin(u * Mathf.PI * 0.5f) * 7f);
+            int shiftY = Mathf.RoundToInt(u * skewY);
+            int colHeight = doorBaseHeight + archAdd;
+
+            bool isPlankSeam = (Mathf.RoundToInt(u * 42f) % 7 == 0) || dx == 0 || dx == reachX - 1;
+
+            for (int dy = 0; dy < colHeight; dy++)
+            {
+                int py = baseY + dy + shiftY;
+                if (py < 0 || py >= h) continue;
+
+                Color c = isPlankSeam ? woodDark : ((Mathf.RoundToInt(u * 42f) / 7) % 2 == 0 ? woodMid : woodLight);
+
+                // Herrajes horizontales de hierro forjado (igual que la puerta izquierda)
+                if (dy == 6 || dy == 7 || dy == colHeight - 7 || dy == colHeight - 6)
+                {
+                    c = (Mathf.RoundToInt(u * 42f) % 6 == 3 && (dy == 6 || dy == colHeight - 7)) ? ironRivet : ironBand;
+                }
+                else if (dy == 0 || dy == colHeight - 1)
+                {
+                    c = woodDark;
+                }
+
+                pixels[py * w + px] = c;
+            }
+
+            // Picos superiores de hierro forjado
+            if (Mathf.RoundToInt(u * 42f) % 5 == 2)
+            {
+                int topY = baseY + colHeight + shiftY;
+                if (topY >= 0 && topY + 2 < h)
+                {
+                    pixels[topY * w + px] = spikeCol;
+                    pixels[(topY + 1) * w + px] = spikeCol;
+                }
+            }
+        }
+
+        tex.SetPixels32(pixels);
+        tex.Apply();
+
+        float pivotX = isWestLeaf ? (4f / w) : ((w - 5f) / w);
+        float pivotY = (baseY + 8f) / h;
+        return Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(pivotX, pivotY), 32f);
+    }
+
     #endregion
 
     #region Cinemática Final y Secuencia de Victoria idéntica al Nivel 1 (Imagen 3)
 
     private IEnumerator Level2EndingSequenceRoutine()
     {
-        BuildEastExitGateIfMissing();
+        bool isLvl3 = IsLevel3Scene();
+        if (isLvl3)
+        {
+            BuildNorthExitGateIfMissing();
+        }
+        else
+        {
+            BuildEastExitGateIfMissing();
+        }
         FindPlayerReferences();
 
         // 1. Esperar si hay algún pergamino abierto (ej. mensaje de derrota del Niño Espectral)
@@ -600,22 +1021,24 @@ public class Level2VictoryManager : MonoBehaviour
         // Desvanecer el mensaje inicial de victoria para dar paso a la caminata y apertura de la puerta derecha
         yield return FadeOutVictoryCardRoutine(0.25f);
 
-        // 4. FASE 2: El jugador se acerca a la Puerta Derecha (Acceso este), la puerta se abre con animación y el jugador cruza
+        // 4. FASE 2: El jugador se acerca a la Puerta de Salida (Este en Nivel 2, Norte/Arriba en Nivel 3), la puerta se abre y el jugador cruza
         if (closedGateBlocker != null) closedGateBlocker.enabled = false;
-        GameObject bardaEste = GameObject.Find("Barda este");
-        if (bardaEste != null)
+        GameObject bardaSalida = GameObject.Find(isLvl3 ? "Barda norte" : "Barda este");
+        if (bardaSalida != null)
         {
-            foreach (var c in bardaEste.GetComponentsInChildren<Collider2D>())
+            foreach (var c in bardaSalida.GetComponentsInChildren<Collider2D>())
                 if (c != null) c.enabled = false;
         }
 
-        Vector3 gateApproachPos = new Vector3(17.6f, GateCenterY, 0f);
+        Vector3 gateApproachPos = isLvl3
+            ? new Vector3(TopGateCenterX, 10.6f, 0f)
+            : new Vector3(17.6f, GateCenterY, 0f);
         if (playerObj != null)
         {
             Vector3 startPos = playerObj.transform.position;
             float dist = Vector2.Distance(startPos, gateApproachPos);
 
-            // Si está lejos de la puerta derecha, camina hacia ella
+            // Si está lejos de la puerta de salida, camina hacia ella
             if (dist > 0.35f)
             {
                 float walkDuration = Mathf.Clamp(dist / 4.5f, 0.55f, 1.35f);
@@ -651,12 +1074,12 @@ public class Level2VictoryManager : MonoBehaviour
             if (playerAnim != null)
             {
                 playerAnim.SetBool("IsMoving", false);
-                playerAnim.SetInteger("Direction", 2);
+                playerAnim.SetInteger("Direction", isLvl3 ? 1 : 2);
             }
             if (playerSr != null) playerSr.flipX = false;
         }
 
-        // 5. Animación de apertura de las dos hojas de la Puerta Derecha (Frame 0 -> Frame 9)
+        // 5. Animación de apertura de las dos hojas de la Puerta de Salida (Frame 0 -> Frame 9)
         if (gateOpenClip == null)
         {
 #if UNITY_EDITOR
@@ -689,18 +1112,20 @@ public class Level2VictoryManager : MonoBehaviour
 
         yield return new WaitForSecondsRealtime(0.12f);
 
-        // 6. El jugador camina cruzando la Puerta Derecha abierta hacia la salida
+        // 6. El jugador camina cruzando la Puerta de Salida abierta (hacia arriba en Nivel 3, hacia la derecha en Nivel 2)
         if (playerObj != null)
         {
             Vector3 walkStart = playerObj.transform.position;
-            Vector3 walkEnd = new Vector3(23.2f, GateCenterY, 0f);
+            Vector3 walkEnd = isLvl3
+                ? new Vector3(TopGateCenterX, 13.8f, 0f)
+                : new Vector3(23.2f, GateCenterY, 0f);
             float walkOutDuration = 1.65f;
             float walkOutElapsed = 0f;
 
             if (playerAnim != null)
             {
                 playerAnim.SetBool("IsMoving", true);
-                playerAnim.SetInteger("Direction", 2);
+                playerAnim.SetInteger("Direction", isLvl3 ? 1 : 2);
             }
             if (playerSr != null) playerSr.flipX = false;
 

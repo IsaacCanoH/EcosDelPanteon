@@ -14,4 +14,7 @@ EditorBuildSettings:
   - enabled: 1
     path: Assets/Scenes/Cementerio_Nivel2.unity
     guid: 4adedf1f45b34c34d9ca10828fddc745
+  - enabled: 1
+    path: Assets/Scenes/Cementerio_Nivel3.unity
+    guid: b27299d784f945b489d6dec1f89ced81
   m_configObjects: {}

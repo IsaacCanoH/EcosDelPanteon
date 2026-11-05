@@ -11,12 +11,13 @@ public class EncounterWaveManager : MonoBehaviour
         public string waveName = "Oleada";
         public int normalGoblins = 3;
         public int chubbyGoblins = 0;
+        public int archerGoblins = 0;
 
-        public int TotalEnemies => normalGoblins + chubbyGoblins;
+        public int TotalEnemies => normalGoblins + chubbyGoblins + archerGoblins;
     }
 
     [Header("Prefabs de Enemigos")]
-    public GameObject goblinPrefab; // Si solo se tiene el prefab base, GoblinVariantConfig se encarga de convertirlo en Gordito
+    public GameObject goblinPrefab; // GoblinVariantConfig configura Normal, Gordito o Arquero
 
     [Header("Oleadas del Encuentro")]
     public WaveDefinition[] waves;
@@ -41,7 +42,7 @@ public class EncounterWaveManager : MonoBehaviour
     public int RemainingInCurrentWave => pendingSpawnQueue.Count + activeEnemies.Count;
 
     private readonly List<EnemyHealth> activeEnemies = new List<EnemyHealth>();
-    private readonly Queue<bool> pendingSpawnQueue = new Queue<bool>(); // true = chubby, false = normal
+    private readonly Queue<int> pendingSpawnQueue = new Queue<int>(); // 0 = normal, 1 = chubby, 2 = archer
     private Coroutine encounterRoutine;
 
     public void StartEncounter()
@@ -90,21 +91,22 @@ public class EncounterWaveManager : MonoBehaviour
             OnWaveStarted?.Invoke(CurrentWaveIndex + 1, waves.Length);
             Debug.Log($"[Encuentro] Iniciando Oleada {CurrentWaveIndex + 1}/{waves.Length} ({currentWave.TotalEnemies} enemigos)");
 
-            // Llenar y mezclar aleatoriamente la cola de spawns (duendes normales y gorditos)
+            // Llenar y mezclar aleatoriamente la cola de spawns (duendes normales, gorditos y arqueros)
             pendingSpawnQueue.Clear();
-            var queueList = new System.Collections.Generic.List<bool>();
-            for (int n = 0; n < currentWave.normalGoblins; n++) queueList.Add(false);
-            for (int c = 0; c < currentWave.chubbyGoblins; c++) queueList.Add(true);
+            var queueList = new System.Collections.Generic.List<int>();
+            for (int n = 0; n < currentWave.normalGoblins; n++) queueList.Add(0);
+            for (int c = 0; c < currentWave.chubbyGoblins; c++) queueList.Add(1);
+            for (int a = 0; a < currentWave.archerGoblins; a++) queueList.Add(2);
 
             // Barajado Fisher-Yates para distribución aleatoria
             for (int k = queueList.Count - 1; k > 0; k--)
             {
                 int rnd = UnityEngine.Random.Range(0, k + 1);
-                bool temp = queueList[k];
+                int temp = queueList[k];
                 queueList[k] = queueList[rnd];
                 queueList[rnd] = temp;
             }
-            foreach (var isChubby in queueList) pendingSpawnQueue.Enqueue(isChubby);
+            foreach (var enemyType in queueList) pendingSpawnQueue.Enqueue(enemyType);
 
             // Spawneo progresivo según concurrencia
             while (pendingSpawnQueue.Count > 0 || activeEnemies.Count > 0)
@@ -114,8 +116,8 @@ public class EncounterWaveManager : MonoBehaviour
 
                 while (activeEnemies.Count < maxSimultaneousEnemies && pendingSpawnQueue.Count > 0)
                 {
-                    bool isChubby = pendingSpawnQueue.Dequeue();
-                    SpawnEnemy(isChubby);
+                    int enemyType = pendingSpawnQueue.Dequeue();
+                    SpawnEnemy(enemyType);
                     yield return new WaitForSeconds(spawnInterval);
                 }
 
@@ -140,8 +142,10 @@ public class EncounterWaveManager : MonoBehaviour
         OnAllWavesCleared?.Invoke();
     }
 
-    private void SpawnEnemy(bool isChubby)
+    private void SpawnEnemy(int enemyType)
     {
+        bool isChubby = enemyType == 1;
+        bool isArcher = enemyType == 2;
         Vector3 spawnPos = GetRandomVariedSpawnPosition();
 
         GameObject enemyObj;
@@ -153,6 +157,10 @@ public class EncounterWaveManager : MonoBehaviour
         {
             // Intentar cargar el prefab estándar del proyecto
             GameObject loadedPrefab = Resources.Load<GameObject>("Prefabs/Enemies/PF_Goblin");
+#if UNITY_EDITOR
+            if (loadedPrefab == null)
+                loadedPrefab = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Enemies/PF_Goblin.prefab");
+#endif
             if (loadedPrefab != null)
                 enemyObj = Instantiate(loadedPrefab, spawnPos, Quaternion.identity, transform);
             else
@@ -168,7 +176,7 @@ public class EncounterWaveManager : MonoBehaviour
 
         GoblinVariantConfig variant = enemyObj.GetComponent<GoblinVariantConfig>();
         if (variant == null) variant = enemyObj.AddComponent<GoblinVariantConfig>();
-        variant.SetVariant(isChubby);
+        variant.SetVariant(isChubby, isArcher);
 
         GoblinAI ai = enemyObj.GetComponent<GoblinAI>();
         if (ai != null)
@@ -176,6 +184,18 @@ public class EncounterWaveManager : MonoBehaviour
             ai.waitForFirstCoin = false;
             ai.enablePatrol = true;
             ai.BeginWaveCombat(Mathf.Max(1, CurrentWaveIndex + 1));
+
+            // Si es Duende Arquero, volver a aplicar su configuración de distancia después de BeginWaveCombat
+            if (isArcher)
+            {
+                var archerCtrl = enemyObj.GetComponent<GoblinArcherController>();
+                if (archerCtrl != null)
+                {
+                    ai.stopDistance = archerCtrl.idealRangedStopDistance;
+                    ai.attackRange = 0.25f;
+                    ai.enableLungeAttack = false;
+                }
+            }
 
             GoblinAwarenessUI awarenessUI = FindObjectOfType<GoblinAwarenessUI>();
             if (awarenessUI != null)
@@ -260,4 +280,3 @@ public class EncounterWaveManager : MonoBehaviour
         return spawnPoints[UnityEngine.Random.Range(0, spawnPoints.Length)];
     }
 }
-

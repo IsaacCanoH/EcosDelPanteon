@@ -206,38 +206,64 @@ public class ToyEncounterZone : MonoBehaviour
         ConfigureWavesForStep(encounterIndex);
     }
 
+    private static bool IsLevel3Scene()
+    {
+        string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        return sceneName.IndexOf("Nivel3", StringComparison.OrdinalIgnoreCase) >= 0 ||
+               sceneName.IndexOf("Level3", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
+
     private void ConfigureWavesForStep(int step)
     {
         if (waveManager == null) return;
+        bool isLvl3 = IsLevel3Scene();
 
         if (step == 0)
         {
-            dropBigKnifeOnClear = true;
-            waveManager.waves = new EncounterWaveManager.WaveDefinition[]
-            {
-                new EncounterWaveManager.WaveDefinition { waveName = "Oleada 1", normalGoblins = 3, chubbyGoblins = 0 },
-                new EncounterWaveManager.WaveDefinition { waveName = "Oleada 2", normalGoblins = 3, chubbyGoblins = 1 }
-            };
+            dropBigKnifeOnClear = !isLvl3;
+            waveManager.waves = isLvl3
+                ? new EncounterWaveManager.WaveDefinition[]
+                {
+                    new EncounterWaveManager.WaveDefinition { waveName = "Oleada 1", normalGoblins = 2, chubbyGoblins = 0, archerGoblins = 1 },
+                    new EncounterWaveManager.WaveDefinition { waveName = "Oleada 2", normalGoblins = 2, chubbyGoblins = 1, archerGoblins = 2 }
+                }
+                : new EncounterWaveManager.WaveDefinition[]
+                {
+                    new EncounterWaveManager.WaveDefinition { waveName = "Oleada 1", normalGoblins = 3, chubbyGoblins = 0 },
+                    new EncounterWaveManager.WaveDefinition { waveName = "Oleada 2", normalGoblins = 3, chubbyGoblins = 1 }
+                };
             waveManager.maxSimultaneousEnemies = 4;
         }
         else if (step == 1)
         {
             dropBigKnifeOnClear = false;
-            waveManager.waves = new EncounterWaveManager.WaveDefinition[]
-            {
-                new EncounterWaveManager.WaveDefinition { waveName = "Oleada 1", normalGoblins = 3, chubbyGoblins = 2 },
-                new EncounterWaveManager.WaveDefinition { waveName = "Oleada 2", normalGoblins = 4, chubbyGoblins = 3 }
-            };
-            waveManager.maxSimultaneousEnemies = 4;
+            waveManager.waves = isLvl3
+                ? new EncounterWaveManager.WaveDefinition[]
+                {
+                    new EncounterWaveManager.WaveDefinition { waveName = "Oleada 1", normalGoblins = 3, chubbyGoblins = 1, archerGoblins = 2 },
+                    new EncounterWaveManager.WaveDefinition { waveName = "Oleada 2", normalGoblins = 3, chubbyGoblins = 2, archerGoblins = 3 }
+                }
+                : new EncounterWaveManager.WaveDefinition[]
+                {
+                    new EncounterWaveManager.WaveDefinition { waveName = "Oleada 1", normalGoblins = 3, chubbyGoblins = 2 },
+                    new EncounterWaveManager.WaveDefinition { waveName = "Oleada 2", normalGoblins = 4, chubbyGoblins = 3 }
+                };
+            waveManager.maxSimultaneousEnemies = isLvl3 ? 5 : 4;
         }
         else if (step == 2)
         {
             dropBigKnifeOnClear = false;
-            waveManager.waves = new EncounterWaveManager.WaveDefinition[]
-            {
-                new EncounterWaveManager.WaveDefinition { waveName = "Vanguardia Espectral", normalGoblins = 8, chubbyGoblins = 4 },
-                new EncounterWaveManager.WaveDefinition { waveName = "Gran Horda del Panteón", normalGoblins = 10, chubbyGoblins = 6 }
-            };
+            waveManager.waves = isLvl3
+                ? new EncounterWaveManager.WaveDefinition[]
+                {
+                    new EncounterWaveManager.WaveDefinition { waveName = "Vanguardia de la Bruja", normalGoblins = 5, chubbyGoblins = 3, archerGoblins = 4 },
+                    new EncounterWaveManager.WaveDefinition { waveName = "Aquelarre del Panteón", normalGoblins = 6, chubbyGoblins = 4, archerGoblins = 4 }
+                }
+                : new EncounterWaveManager.WaveDefinition[]
+                {
+                    new EncounterWaveManager.WaveDefinition { waveName = "Vanguardia Espectral", normalGoblins = 8, chubbyGoblins = 4 },
+                    new EncounterWaveManager.WaveDefinition { waveName = "Gran Horda del Panteón", normalGoblins = 10, chubbyGoblins = 6 }
+                };
             waveManager.maxSimultaneousEnemies = 7;
         }
     }
@@ -287,9 +313,12 @@ public class ToyEncounterZone : MonoBehaviour
 
             if (ParchmentMessageUI.Instance != null)
             {
+                bool isLvl3 = IsLevel3Scene();
                 ParchmentMessageUI.Instance.Show(
-                    "HORDA ESPECTRAL",
-                    "El panteón despierta en cólera total.\nDerrota a las 2 hordas con <link=\"key:F\"><color=#00000000> F </color></link> para desafiar al Niño Espectral.",
+                    isLvl3 ? "HORDA DEL AQUELARRE" : "HORDA ESPECTRAL",
+                    isLvl3
+                        ? "El panteón despierta bajo el conjuro oscuro.\nDerrota a las 2 hordas con <link=\"key:F\"><color=#00000000> F </color></link> para desafiar a La Bruja."
+                        : "El panteón despierta en cólera total.\nDerrota a las 2 hordas con <link=\"key:F\"><color=#00000000> F </color></link> para desafiar al Niño Espectral.",
                     null,
                     null,
                     true
@@ -336,8 +365,11 @@ public class ToyEncounterZone : MonoBehaviour
             targetToy.gameObject.SetActive(true);
         }
 
-        // 2. En el primer juguete: aparece también el Cuchillo tirado al lado del juguete con su brillo y animación de recolección
-        if (dropBigKnifeOnClear || encounterIndex == 0)
+        bool isLvl3 = IsLevel3Scene();
+
+        // 2. En el Nivel 2: en el primer juguete aparece también el Cuchillo tirado al lado del juguete.
+        //    En el Nivel 3: ya se tiene el Cuchillo y Machete desde el inicio, así que solo se revela el juguete y un orbe de vida.
+        if (!isLvl3 && (dropBigKnifeOnClear || encounterIndex == 0))
         {
             Vector3 knifeDropPos = toyCenter + new Vector3(0.82f, 0f, 0f);
             WeaponPickup.SpawnWeaponDrop(WeaponType.BigKnife, knifeDropPos);
@@ -347,6 +379,21 @@ public class ToyEncounterZone : MonoBehaviour
                 ParchmentMessageUI.Instance.Show(
                     "CUCHILLO Y JUGUETE REVELADOS",
                     "Has derrotado a los soldados de La Llorona.\nRecoge el primer juguete y el Cuchillo junto a él en el altar.\nPulsa 1: Farol (17 DMG) o 2: Cuchillo (28 DMG).",
+                    null,
+                    null,
+                    true
+                );
+            }
+        }
+        else if (isLvl3 && encounterIndex == 0)
+        {
+            HealthPickup.SpawnDrop(toyCenter + new Vector3(0.82f, 0f, 0f), HealthPickup.HealMode.OneHeart);
+
+            if (ParchmentMessageUI.Instance != null)
+            {
+                ParchmentMessageUI.Instance.Show(
+                    "PRIMER JUGUETE REVELADO",
+                    "Has derrotado a los soldados del panteón.\nRecoge el primer juguete en el altar.\nRecuerda alternar con 1: Farol, 2: Cuchillo y 3: Machete.",
                     null,
                     null,
                     true
@@ -381,11 +428,14 @@ public class ToyEncounterZone : MonoBehaviour
         Vector3 spawnPos = altarCenter + new Vector3(0f, 0.45f, 0f);
 
         bool bossParchmentDone = false;
+        bool isLvl3 = IsLevel3Scene();
         if (ParchmentMessageUI.Instance != null)
         {
             ParchmentMessageUI.Instance.Show(
-                "NIÑO ESPECTRAL",
-                "«La Llorona me envió...\n¡Nunca saldrás con vida de este panteón!»",
+                isLvl3 ? "LA BRUJA" : "NIÑO ESPECTRAL",
+                isLvl3
+                    ? "«¡Mis hechizos y sombras te consumirán!\n¡Jamás cruzarás la puerta del norte!»"
+                    : "«La Llorona me envió...\n¡Nunca saldrás con vida de este panteón!»",
                 null,
                 () => { bossParchmentDone = true; },
                 true
@@ -497,26 +547,32 @@ public class ToyEncounterZone : MonoBehaviour
         // Restaurar el control del jugador
         if (playerController != null) playerController.enabled = true;
 
-        // Aparecer el último juguete en el altar y a su lado el Machete y el Orbe de Vida Completa
+        // Aparecer el último juguete en el altar y el Orbe de Vida Completa (y el Machete en Nivel 2)
+        bool isLvl3 = IsLevel3Scene();
         Vector3 toyCenter = targetToy != null ? targetToy.transform.position : (transform.position + new Vector3(0f, 0.55f, 0f));
         if (targetToy != null)
         {
             targetToy.gameObject.SetActive(true);
         }
 
-        WeaponPickup.SpawnWeaponDrop(WeaponType.Machete, toyCenter + new Vector3(0.85f, 0f, 0f));
+        if (!isLvl3)
+        {
+            WeaponPickup.SpawnWeaponDrop(WeaponType.Machete, toyCenter + new Vector3(0.85f, 0f, 0f));
+        }
         HealthPickup.SpawnDrop(toyCenter + new Vector3(-0.85f, 0f, 0f), HealthPickup.HealMode.FullHealth);
 
         GlobalEncountersCompleted++;
         IsAnyEncounterActive = false;
         OnEncounterCleared?.Invoke();
 
-        // Mostrar el diálogo de derrota del Niño Espectral después de que desapareció lentamente
+        // Mostrar el diálogo de derrota del Jefe después de que desapareció lentamente
         if (ParchmentMessageUI.Instance != null)
         {
             ParchmentMessageUI.Instance.Show(
-                "¡NIÑO ESPECTRAL DERROTADO!",
-                "El espíritu del Niño Espectral se ha desvanecido.\nRecoge el último juguete y el Machete (50 DMG) en el altar para abrir la puerta derecha y escapar del panteón.",
+                isLvl3 ? "¡LA BRUJA DERROTADA!" : "¡NIÑO ESPECTRAL DERROTADO!",
+                isLvl3
+                    ? "La Bruja del Panteón se ha desvanecido.\nRecoge el último juguete en el altar para abrir la puerta superior y escapar del panteón."
+                    : "El espíritu del Niño Espectral se ha desvanecido.\nRecoge el último juguete y el Machete (50 DMG) en el altar para abrir la puerta derecha y escapar del panteón.",
                 null,
                 null,
                 true

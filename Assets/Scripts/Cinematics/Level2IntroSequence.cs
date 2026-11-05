@@ -90,12 +90,21 @@ public class Level2IntroSequence : MonoBehaviour
 
         if (ParchmentMessageUI.Instance != null)
         {
+            string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+            bool isLvl3 = sceneName.IndexOf("Nivel3", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                          sceneName.IndexOf("Level3", StringComparison.OrdinalIgnoreCase) >= 0;
+
             ParchmentMessageUI.Instance.Show(
                 "OBJETIVO",
-                "Recupera los 3 juguetes.\n" +
-                "Cada uno despierta una oleada.\n" +
-                "Expúlsalos y revela otra pista.\n" +
-                "<link=\"key:F\"><color=#00000000> F </color></link> Farol: 3 golpes por duende.",
+                isLvl3
+                    ? "Recupera los 3 juguetes para desafiar a La Bruja.\n" +
+                      "Cuentas con tus armas del nivel anterior:\n" +
+                      "1: Farol (17)  |  2: Cuchillo (28)  |  3: Machete (50).\n" +
+                      "<link=\"key:F\"><color=#00000000> F </color></link> Atacar con el arma equipada."
+                    : "Recupera los 3 juguetes.\n" +
+                      "Cada uno despierta una oleada.\n" +
+                      "Expúlsalos y revela otra pista.\n" +
+                      "<link=\"key:F\"><color=#00000000> F </color></link> Farol: 3 golpes por duende.",
                 null,
                 () =>
                 {

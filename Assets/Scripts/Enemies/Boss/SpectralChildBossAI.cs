@@ -53,11 +53,20 @@ public class SpectralChildBossAI : MonoBehaviour
     public float minionSpawnInterval = 14.0f;
     public int maxActiveMinions = 4;
 
+    [Header("Modo Jefe Nivel 3: La Bruja")]
+    public bool isWitchBoss = false;
+    public float teleportInterval = 4.2f;
+    public float overchargeTeleportInterval = 2.1f;
+
     public BossState CurrentState { get; private set; } = BossState.Spawning;
     public event Action<Vector3> OnDeathCinematicFinished;
 
     private static Sprite softGlowSprite;
+    private static Sprite[] cachedWitchSprites;
     private static AudioClip cachedProceduralBossMusic;
+
+    private float nextTeleportTime = 0f;
+    private bool isTeleporting = false;
 
     // Estado guardado de la música de fondo original del nivel para restaurarla al terminar el combate
     private AudioSource savedBgMusicSource;
@@ -125,11 +134,33 @@ public class SpectralChildBossAI : MonoBehaviour
 
         LoadAudioClips();
 
+        // Detectar automáticamente si estamos en el Nivel 3 (La Bruja)
+        string activeScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        if (activeScene.IndexOf("Nivel3", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            activeScene.IndexOf("Level3", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            isWitchBoss = true;
+        }
+
+        if (isWitchBoss)
+        {
+            normalAuraColor = new Color(0.92f, 0.78f, 1.0f, 0.98f);
+            overchargeAuraColor = new Color(0.85f, 0.28f, 1.0f, 1.0f);
+            attackCooldown = 1.65f;
+            if (animator != null) animator.enabled = false;
+            EnsureWitchSprites();
+            if (visualRenderer != null && cachedWitchSprites != null && cachedWitchSprites.Length > 0)
+            {
+                visualRenderer.sprite = cachedWitchSprites[0];
+            }
+        }
+
         if (health != null)
         {
             health.ConfigureVariant(EnemyHealth.EnemyVariant.SpectralChildBoss);
-            health.maxHealth = 250;
-            health.currentHealth = 250;
+            int targetMaxHp = isWitchBoss ? 280 : 250;
+            health.maxHealth = targetMaxHp;
+            health.currentHealth = targetMaxHp;
             health.OnDamageTaken += HandleDamageTaken;
             health.OnDied += HandleDeath;
         }
@@ -187,12 +218,13 @@ public class SpectralChildBossAI : MonoBehaviour
             GameObject barObj = new GameObject("BossHealthBarUI");
             barObj.AddComponent<BossHealthBarUI>();
         }
-        BossHealthBarUI.Instance.BindBoss(health, "NIÑO ESPECTRAL");
+        BossHealthBarUI.Instance.BindBoss(health, isWitchBoss ? "LA BRUJA" : "NIÑO ESPECTRAL");
 
-        // Cambiar la música de fondo a un tema de batalla emocionante durante el combate contra el Niño Espectral
+        // Cambiar la música de fondo a un tema de batalla emocionante durante el combate
         StartBossBattleMusic();
 
         nextMinionSpawnTime = Time.time + 9.0f;
+        nextTeleportTime = Time.time + teleportInterval;
         StartCoroutine(SpawnIntroRoutine());
     }
 
@@ -313,6 +345,20 @@ public class SpectralChildBossAI : MonoBehaviour
         {
             nextMinionSpawnTime = Time.time + minionSpawnInterval;
             TrySpawnBattleMinions();
+        }
+
+        // Habilidad nueva de La Bruja (Nivel 3): Teletransporte místico por la arena
+        if (isWitchBoss && !isTeleporting && playerTransform != null)
+        {
+            float distToPlayer = Vector2.Distance(rb.position, playerTransform.position);
+            bool emergencyBlink = distToPlayer < 1.75f && Time.time >= nextTeleportTime - 1.5f;
+            if (Time.time >= nextTeleportTime || emergencyBlink)
+            {
+                float interval = isInOvercharge ? overchargeTeleportInterval : teleportInterval;
+                nextTeleportTime = Time.time + interval;
+                StartCoroutine(WitchTeleportRoutine());
+                return;
+            }
         }
 
         // Manejo del estado de sobrecarga
@@ -534,8 +580,149 @@ public class SpectralChildBossAI : MonoBehaviour
         CreateProjectile(transform.position + (Vector3)dirToPlayer * 0.45f, Quaternion.Euler(0, 0, 20f) * dirToPlayer, 5.0f, projectileDamage);
         CreateProjectile(transform.position + (Vector3)dirToPlayer * 0.45f, Quaternion.Euler(0, 0, -20f) * dirToPlayer, 5.0f, projectileDamage);
 
-        // 3. Ráfaga directa de 3 proyectiles rápidos dirigidos al jugador
-        StartCoroutine(BurstRoutine(3, 0.12f));
+        // 3. Ráfaga directa de proyectiles rápidos dirigidos al jugador (más ráfagas en el modo La Bruja)
+        StartCoroutine(BurstRoutine(isWitchBoss ? 5 : 3, isWitchBoss ? 0.09f : 0.12f));
+    }
+
+    private void LateUpdate()
+    {
+        if (!isWitchBoss || visualRenderer == null || CurrentState == BossState.Dying) return;
+
+        EnsureWitchSprites();
+        if (cachedWitchSprites != null && cachedWitchSprites.Length > 0)
+        {
+            int frameIdx = Mathf.FloorToInt(Time.time * 7f) % cachedWitchSprites.Length;
+            visualRenderer.sprite = cachedWitchSprites[frameIdx];
+            if (playerTransform != null)
+            {
+                float dx = playerTransform.position.x - transform.position.x;
+                if (Mathf.Abs(dx) > 0.12f)
+                {
+                    visualRenderer.flipX = dx < 0f;
+                }
+            }
+        }
+    }
+
+    private IEnumerator WitchTeleportRoutine()
+    {
+        if (isTeleporting || CurrentState == BossState.Dying) yield break;
+        isTeleporting = true;
+
+        Vector3 oldPos = transform.position;
+        SpawnTeleportRuneBurst(oldPos);
+
+        if (audioSource != null && laughClip != null)
+        {
+            audioSource.PlayOneShot(laughClip, 0.70f * AudioManager.EnemyVolume);
+        }
+
+        // Desvanecimiento rápido de teletransporte
+        float vanishTime = 0.20f;
+        float t = 0f;
+        Vector3 origScale = transform.localScale;
+        while (t < vanishTime)
+        {
+            t += Time.deltaTime;
+            float p = Mathf.Clamp01(t / vanishTime);
+            transform.localScale = new Vector3(Mathf.Lerp(origScale.x, 0.15f, p), Mathf.Lerp(origScale.y, 1.45f, p), 1f);
+            if (visualRenderer != null)
+            {
+                visualRenderer.color = new Color(0.85f, 0.25f, 1.0f, 1f - p);
+            }
+            yield return null;
+        }
+
+        // Elegir nueva posición libre alrededor del altar y a distancia táctica del jugador
+        Vector2 bestTarget = altarOrigin;
+        Vector2 playerPos = playerTransform != null ? (Vector2)playerTransform.position : altarOrigin;
+        for (int attempt = 0; attempt < 16; attempt++)
+        {
+            float angle = UnityEngine.Random.Range(0f, 360f) * Mathf.Deg2Rad;
+            float dist = UnityEngine.Random.Range(2.6f, 4.4f);
+            Vector2 candidate = playerPos + new Vector2(Mathf.Cos(angle) * dist, Mathf.Sin(angle) * dist);
+
+            if (Vector2.Distance(candidate, altarOrigin) > maxAltarLeash)
+            {
+                Vector2 fromAltar = (candidate - altarOrigin).normalized;
+                candidate = altarOrigin + fromAltar * UnityEngine.Random.Range(2.2f, maxAltarLeash * 0.85f);
+            }
+
+            candidate.x = Mathf.Clamp(candidate.x, MinMapX, MaxMapX);
+            candidate.y = Mathf.Clamp(candidate.y, MinMapY, MaxMapY);
+
+            if (!IsPositionBlocked(candidate, 0.58f) && Vector2.Distance(candidate, oldPos) > 1.8f)
+            {
+                bestTarget = candidate;
+                break;
+            }
+        }
+
+        bestTarget = FindClearPosition(bestTarget);
+        transform.position = bestTarget;
+        if (rb != null) rb.position = bestTarget;
+
+        SpawnTeleportRuneBurst(bestTarget);
+
+        // Reaparición mística
+        float appearTime = 0.20f;
+        t = 0f;
+        while (t < appearTime)
+        {
+            t += Time.deltaTime;
+            float p = Mathf.Clamp01(t / appearTime);
+            transform.localScale = new Vector3(Mathf.Lerp(0.15f, origScale.x, p), Mathf.Lerp(1.45f, origScale.y, p), 1f);
+            if (visualRenderer != null)
+            {
+                Color baseCol = isInOvercharge ? overchargeAuraColor : normalAuraColor;
+                visualRenderer.color = new Color(baseCol.r, baseCol.g, baseCol.b, p);
+            }
+            yield return null;
+        }
+
+        transform.localScale = origScale;
+        if (visualRenderer != null)
+        {
+            visualRenderer.color = isInOvercharge ? overchargeAuraColor : normalAuraColor;
+        }
+
+        isTeleporting = false;
+
+        // Al salir del teletransporte, La Bruja lanza inmediatamente una ráfaga morada rápida
+        if (health != null && health.currentHealth > 0 && playerTransform != null)
+        {
+            StartCoroutine(BurstRoutine(4, 0.10f));
+        }
+    }
+
+    private void SpawnTeleportRuneBurst(Vector3 pos)
+    {
+        StartCoroutine(TeleportRuneBurstEffectRoutine(pos));
+    }
+
+    private IEnumerator TeleportRuneBurstEffectRoutine(Vector3 pos)
+    {
+        GameObject ringObj = new GameObject("WitchTeleportFlash");
+        ringObj.transform.position = pos + new Vector3(0f, 0.35f, 0f);
+        SpriteRenderer ringSr = ringObj.AddComponent<SpriteRenderer>();
+        ringSr.sprite = GetOrCreateSoftGlowSprite();
+        ringSr.sortingLayerName = "Layer 1";
+        ringSr.sortingOrder = 5;
+        ringSr.color = new Color(0.82f, 0.25f, 1.0f, 0.9f);
+
+        float dur = 0.35f;
+        float el = 0f;
+        while (el < dur)
+        {
+            el += Time.deltaTime;
+            float p = Mathf.Clamp01(el / dur);
+            float sc = Mathf.Lerp(0.8f, 2.6f, p);
+            ringObj.transform.localScale = new Vector3(sc, sc, 1f);
+            ringSr.color = new Color(0.82f, 0.25f, 1.0f, (1f - p) * 0.9f);
+            yield return null;
+        }
+
+        Destroy(ringObj);
     }
 
     private void SpawnOverchargeOrbs(int count = 1)
@@ -584,7 +771,8 @@ public class SpectralChildBossAI : MonoBehaviour
 
         GoblinVariantConfig cfg = minionObj.GetComponent<GoblinVariantConfig>();
         if (cfg == null) cfg = minionObj.AddComponent<GoblinVariantConfig>();
-        cfg.SetVariant(isChubby);
+        bool spawnArcher = isWitchBoss && !isChubby && UnityEngine.Random.value < 0.65f;
+        cfg.SetVariant(isChubby, spawnArcher);
 
         GoblinAI ai = minionObj.GetComponent<GoblinAI>();
         if (ai != null)
@@ -592,6 +780,16 @@ public class SpectralChildBossAI : MonoBehaviour
             ai.waitForFirstCoin = false;
             ai.enablePatrol = false;
             ai.BeginWaveCombat(1);
+            if (spawnArcher)
+            {
+                var archerCtrl = minionObj.GetComponent<GoblinArcherController>();
+                if (archerCtrl != null)
+                {
+                    ai.stopDistance = archerCtrl.idealRangedStopDistance;
+                    ai.attackRange = 0.25f;
+                    ai.enableLungeAttack = false;
+                }
+            }
         }
 
         EnemyTeleportSpawn teleport = minionObj.GetComponent<EnemyTeleportSpawn>();
@@ -607,28 +805,83 @@ public class SpectralChildBossAI : MonoBehaviour
     {
         CurrentState = BossState.Attacking;
 
-        switch (attackCycleIndex)
+        if (isWitchBoss)
         {
-            case 0:
-                SpawnSingleShot();
-                nextAttackTime = Time.time + attackCooldown;
-                break;
-            case 1:
-                SpawnTripleSpread();
-                nextAttackTime = Time.time + attackCooldown * 1.15f;
-                break;
-            case 2:
-                StartCoroutine(BurstRoutine(4, 0.18f));
-                nextAttackTime = Time.time + attackCooldown * 1.3f;
-                break;
-            case 3:
-                SpawnNova360(10);
-                nextAttackTime = Time.time + attackCooldown * 1.4f;
-                break;
+            // Ataques de La Bruja (Nivel 3): orientados a múltiples ráfagas de bolas de energía moradas
+            switch (attackCycleIndex)
+            {
+                case 0:
+                    // Ráfaga rápida de 5 bolas moradas
+                    StartCoroutine(BurstRoutine(5, 0.11f));
+                    nextAttackTime = Time.time + attackCooldown;
+                    break;
+                case 1:
+                    // Ráfaga triple en abanico repetida 3 veces seguidas
+                    StartCoroutine(TripleSpreadBurstRoutine(3, 0.22f));
+                    nextAttackTime = Time.time + attackCooldown * 1.15f;
+                    break;
+                case 2:
+                    // Ráfaga intensa de 7 proyectiles morados con oscilación angular
+                    StartCoroutine(AlternatingBurstRoutine(7, 0.09f));
+                    nextAttackTime = Time.time + attackCooldown * 1.25f;
+                    break;
+                case 3:
+                    // Nova circular morada + Ráfaga directa de 4 bolas
+                    SpawnNova360(10);
+                    StartCoroutine(BurstRoutine(4, 0.11f));
+                    nextAttackTime = Time.time + attackCooldown * 1.35f;
+                    break;
+            }
+        }
+        else
+        {
+            switch (attackCycleIndex)
+            {
+                case 0:
+                    SpawnSingleShot();
+                    nextAttackTime = Time.time + attackCooldown;
+                    break;
+                case 1:
+                    SpawnTripleSpread();
+                    nextAttackTime = Time.time + attackCooldown * 1.15f;
+                    break;
+                case 2:
+                    StartCoroutine(BurstRoutine(4, 0.18f));
+                    nextAttackTime = Time.time + attackCooldown * 1.3f;
+                    break;
+                case 3:
+                    SpawnNova360(10);
+                    nextAttackTime = Time.time + attackCooldown * 1.4f;
+                    break;
+            }
         }
 
         attackCycleIndex = (attackCycleIndex + 1) % 4;
         StartCoroutine(ResetAttackStateRoutine(0.45f));
+    }
+
+    private IEnumerator TripleSpreadBurstRoutine(int wavesCount, float waveInterval)
+    {
+        for (int i = 0; i < wavesCount; i++)
+        {
+            if (health == null || health.currentHealth <= 0 || playerTransform == null) yield break;
+            SpawnTripleSpread();
+            yield return new WaitForSeconds(waveInterval);
+        }
+    }
+
+    private IEnumerator AlternatingBurstRoutine(int shots, float delay)
+    {
+        for (int i = 0; i < shots; i++)
+        {
+            if (health == null || health.currentHealth <= 0 || playerTransform == null) yield break;
+            Vector2 baseDir = (playerTransform.position - transform.position).normalized;
+            float spreadAngle = Mathf.Sin(i * 1.35f) * 16f;
+            Vector2 shotDir = Quaternion.Euler(0f, 0f, spreadAngle) * baseDir;
+            PlayAttackAnimationAndSound(baseDir);
+            CreateProjectile(transform.position + (Vector3)shotDir * 0.45f, shotDir, 6.2f, projectileDamage);
+            yield return new WaitForSeconds(delay);
+        }
     }
 
     private void PlayAttackAnimationAndSound(Vector2 dir)
@@ -716,6 +969,10 @@ public class SpectralChildBossAI : MonoBehaviour
 
         SpectralProjectile proj = projObj.GetComponent<SpectralProjectile>();
         if (proj == null) proj = projObj.AddComponent<SpectralProjectile>();
+        if (isWitchBoss)
+        {
+            proj.ConfigurePurpleOrb();
+        }
         proj.Launch(direction, speed, damage);
     }
 
@@ -814,12 +1071,13 @@ public class SpectralChildBossAI : MonoBehaviour
             float riseY = Mathf.SmoothStep(0f, 0.65f, p);
             transform.position = startPos + new Vector3(tremor, riseY, 0f);
 
-            // Pulso luminoso entre cian espectral y blanco antes de desvanecerse lentamente
+            // Pulso luminoso entre cian/morado espectral y blanco antes de desvanecerse lentamente
             float alpha = Mathf.Pow(1f - p, 1.25f);
             float flash = Mathf.PingPong(elapsed * 6f, 1f);
+            Color baseDeathCol = isWitchBoss ? new Color(0.85f, 0.32f, 1f, 1f) : new Color(0.3f, 0.88f, 1f, 1f);
             if (visualRenderer != null)
             {
-                Color c = Color.Lerp(new Color(0.3f, 0.88f, 1f, 1f), Color.white, flash * 0.65f);
+                Color c = Color.Lerp(baseDeathCol, Color.white, flash * 0.65f);
                 c.a = alpha;
                 visualRenderer.color = c;
             }
@@ -835,7 +1093,7 @@ public class SpectralChildBossAI : MonoBehaviour
             {
                 float auraScale = Mathf.Lerp(1.2f, 2.8f, p);
                 auraObj.transform.localScale = new Vector3(auraScale, auraScale, 1f);
-                auraSr.color = new Color(0.4f, 0.95f, 1f, (1f - p) * 0.75f);
+                auraSr.color = new Color(baseDeathCol.r, baseDeathCol.g, baseDeathCol.b, (1f - p) * 0.75f);
             }
 
             for (int i = 0; i < wisps.Count; i++)
@@ -848,7 +1106,7 @@ public class SpectralChildBossAI : MonoBehaviour
                     0.25f + (elapsed * (0.45f + (i % 3) * 0.15f)) % 1.1f,
                     0f
                 );
-                wispRenderers[i].color = new Color(0.6f, 0.96f, 1f, (1f - p) * 0.85f);
+                wispRenderers[i].color = new Color(baseDeathCol.r, baseDeathCol.g, baseDeathCol.b, (1f - p) * 0.85f);
             }
 
             yield return null;
@@ -1054,6 +1312,141 @@ public class SpectralChildBossAI : MonoBehaviour
         cachedProceduralBossMusic = AudioClip.Create("BossBattleTheme_NinoEspectral", totalSamples, 1, sampleRate, false);
         cachedProceduralBossMusic.SetData(samples, 0);
         return cachedProceduralBossMusic;
+    }
+
+    private static void EnsureWitchSprites()
+    {
+        if (cachedWitchSprites != null && cachedWitchSprites.Length == 4 && cachedWitchSprites[0] != null)
+            return;
+
+        cachedWitchSprites = new Sprite[4];
+        for (int f = 0; f < 4; f++)
+        {
+            cachedWitchSprites[f] = CreateWitchSpriteFrame(f);
+        }
+    }
+
+    private static Sprite CreateWitchSpriteFrame(int frame)
+    {
+        int w = 44;
+        int h = 58;
+        Texture2D tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
+        tex.filterMode = FilterMode.Point;
+        for (int y = 0; y < h; y++)
+            for (int x = 0; x < w; x++)
+                tex.SetPixel(x, y, Color.clear);
+
+        Color robeDark = new Color(0.11f, 0.05f, 0.18f, 1f);
+        Color robeMid = new Color(0.22f, 0.09f, 0.34f, 1f);
+        Color robeLight = new Color(0.38f, 0.16f, 0.56f, 1f);
+        Color hatBrim = new Color(0.14f, 0.06f, 0.22f, 1f);
+        Color hatBand = new Color(0.76f, 0.22f, 0.98f, 1f);
+        Color buckleGold = new Color(0.96f, 0.82f, 0.28f, 1f);
+        Color skinWitch = new Color(0.68f, 0.78f, 0.64f, 1f);
+        Color eyeGlow = new Color(0.95f, 0.35f, 1.0f, 1f);
+        Color staffWood = new Color(0.38f, 0.22f, 0.12f, 1f);
+        Color crystalCore = new Color(0.98f, 0.78f, 1.0f, 1f);
+        Color crystalOuter = new Color(0.75f, 0.18f, 0.98f, 1f);
+
+        int cx = 20;
+        int bobY = (frame == 1 || frame == 2) ? 1 : 0;
+        float phase = frame * (Mathf.PI * 0.5f);
+
+        // 1. Túnica oscura y púrpura de La Bruja con bordes ondeantes
+        for (int y = 4 + bobY; y <= 34 + bobY; y++)
+        {
+            float t = (y - (4f + bobY)) / 30f;
+            float halfW = Mathf.Lerp(10.5f, 4.5f, Mathf.Pow(t, 0.8f));
+            float sway = Mathf.Sin(phase + y * 0.25f) * Mathf.Lerp(1.5f, 0.2f, t);
+
+            int minX = Mathf.RoundToInt(cx + sway - halfW);
+            int maxX = Mathf.RoundToInt(cx + sway + halfW);
+            for (int x = minX; x <= maxX; x++)
+            {
+                if (x < 1 || x >= w - 1) continue;
+                int jaggedCut = 4 + bobY + ((x + frame) % 3);
+                if (y < jaggedCut) continue;
+
+                float distNorm = Mathf.Abs(x - (cx + sway)) / Mathf.Max(1f, halfW);
+                Color c = distNorm > 0.75f ? robeDark : (Mathf.Abs(x - cx) <= 2 ? robeLight : robeMid);
+                tex.SetPixel(x, y, c);
+            }
+        }
+
+        // 2. Rostro y cabello de La Bruja
+        for (int y = 34 + bobY; y <= 40 + bobY; y++)
+        {
+            for (int x = cx - 3; x <= cx + 3; x++)
+            {
+                tex.SetPixel(x, y, skinWitch);
+            }
+            // Mechones grises/oscuros laterales
+            tex.SetPixel(cx - 4, y, robeDark);
+            tex.SetPixel(cx + 4, y, robeDark);
+        }
+
+        // Ojos brillantes morados/magenta
+        tex.SetPixel(cx - 2, 38 + bobY, eyeGlow);
+        tex.SetPixel(cx + 2, 38 + bobY, eyeGlow);
+
+        // 3. Sombrero puntiagudo clásico de Bruja
+        // Ala ancha del sombrero
+        for (int x = cx - 9; x <= cx + 9; x++)
+        {
+            tex.SetPixel(x, 41 + bobY, hatBrim);
+            if (Mathf.Abs(x - cx) <= 7)
+                tex.SetPixel(x, 42 + bobY, robeMid);
+        }
+        // Cinta morada y hebilla dorada
+        for (int x = cx - 5; x <= cx + 5; x++)
+        {
+            tex.SetPixel(x, 43 + bobY, hatBand);
+        }
+        tex.SetPixel(cx, 43 + bobY, buckleGold);
+        tex.SetPixel(cx - 1, 43 + bobY, buckleGold);
+
+        // Cono alto del sombrero inclinado en la punta
+        for (int y = 44 + bobY; y <= 55 + bobY; y++)
+        {
+            float ht = (y - (44f + bobY)) / 11f;
+            float coneHalfW = Mathf.Lerp(5.0f, 0.8f, ht);
+            float bend = ht * ht * 2.5f;
+            int minX = Mathf.RoundToInt(cx - bend - coneHalfW);
+            int maxX = Mathf.RoundToInt(cx - bend + coneHalfW);
+            for (int x = minX; x <= maxX; x++)
+            {
+                if (x >= 1 && x < w - 1)
+                    tex.SetPixel(x, y, x == minX ? robeDark : robeMid);
+            }
+        }
+
+        // 4. Báculo nudoso con cristal de energía morada a la derecha
+        int staffX = cx + 10;
+        for (int y = 8 + bobY; y <= 38 + bobY; y++)
+        {
+            tex.SetPixel(staffX, y, staffWood);
+            tex.SetPixel(staffX + 1, y, robeDark);
+        }
+        // Mano sosteniendo el báculo
+        tex.SetPixel(staffX - 1, 26 + bobY, skinWitch);
+        tex.SetPixel(staffX, 26 + bobY, skinWitch);
+
+        // Orbe de cristal morado brillante en la punta del báculo
+        int orbY = 40 + bobY;
+        for (int dy = -3; dy <= 3; dy++)
+        {
+            for (int dx = -3; dx <= 3; dx++)
+            {
+                float d = Mathf.Sqrt(dx * dx + dy * dy);
+                if (d <= 1.4f)
+                    tex.SetPixel(staffX + dx, orbY + dy, crystalCore);
+                else if (d <= 3.0f + (frame % 2) * 0.4f)
+                    tex.SetPixel(staffX + dx, orbY + dy, crystalOuter);
+            }
+        }
+
+        tex.Apply();
+        return Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.08f), 32f);
     }
 
     private static Sprite GetOrCreateSoftGlowSprite()
