@@ -114,7 +114,7 @@ public class PlayerWeaponController : MonoBehaviour
         lanternDamage = 17;
         bigKnifeDamage = 28;
         macheteDamage = 50;
-        lanternRange = 2.4f;
+        lanternRange = 2.15f;
         knifeRange = 0.88f;
         macheteRange = 1.15f;
         attackArcAngle = 105f;
@@ -180,11 +180,11 @@ public class PlayerWeaponController : MonoBehaviour
         handWeaponHolder.localScale = new Vector3(invX, invY, 1f);
     }
 
-    public void UpgradeLanternToRadial(int radialDmg = 38, float radialRng = 3.75f)
+    public void UpgradeLanternToRadial(int radialDmg = 34, float radialRng = 2.85f)
     {
-        // Más daño que el Cuchillo (28 DMG) pero menos que el Machete (50 DMG) -> 38 DMG
-        lanternDamage = Mathf.Clamp(radialDmg, bigKnifeDamage + 6, macheteDamage - 6);
-        lanternRange = Mathf.Max(3.5f, radialRng);
+        // Más daño que el Cuchillo (28 DMG) pero menos que el Machete (50 DMG) -> 34 DMG
+        lanternDamage = radialDmg > 0 ? radialDmg : 34;
+        lanternRange = Mathf.Clamp(radialRng, 2.5f, 3.1f);
         if (lanternComponent == null) lanternComponent = GetComponent<PlayerLantern>();
         if (lanternComponent != null && !lanternComponent.isRadialUpgraded)
         {

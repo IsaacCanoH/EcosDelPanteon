@@ -67,6 +67,10 @@ public class SpectralChildBossAI : MonoBehaviour
     private static Sprite softGlowSprite;
     private static Sprite[] cachedWitchSprites; // 0..3 = Idle/Flotando, 4..7 = Canalizando/Atacando
     private static AudioClip cachedProceduralBossMusic;
+    private static AudioClip cachedProceduralWitchBossMusic;
+    private static AudioClip cachedWitchProjectileClip;
+    private static AudioClip cachedWitchOverchargeClip;
+    private static AudioClip cachedWitchLaughClip;
 
     private float nextTeleportTime = 0f;
     private bool isTeleporting = false;
@@ -79,6 +83,10 @@ public class SpectralChildBossAI : MonoBehaviour
         softGlowSprite = null;
         cachedWitchSprites = null;
         cachedProceduralBossMusic = null;
+        cachedProceduralWitchBossMusic = null;
+        cachedWitchProjectileClip = null;
+        cachedWitchOverchargeClip = null;
+        cachedWitchLaughClip = null;
     }
 
     // Estado guardado de la música de fondo original del nivel para restaurarla al terminar el combate
@@ -180,6 +188,12 @@ public class SpectralChildBossAI : MonoBehaviour
                 visualRenderer.color = Color.white;
             }
             SetupWitchMysticAura();
+
+            // Sonidos exclusivos de ataque, sobrecarga, teletransporte y música de combate para La Bruja
+            projectileClip = GetOrCreateWitchProjectileClip();
+            overchargeClip = GetOrCreateWitchOverchargeClip();
+            laughClip = GetOrCreateWitchLaughClip();
+            bossBattleMusicClip = GetOrCreateProceduralWitchBossBattleMusicClip();
         }
 
         if (health != null)
@@ -1028,7 +1042,8 @@ public class SpectralChildBossAI : MonoBehaviour
 
         if (audioSource != null && projectileClip != null)
         {
-            audioSource.PlayOneShot(projectileClip, 0.85f * AudioManager.EnemyVolume);
+            audioSource.pitch = isWitchBoss ? UnityEngine.Random.Range(0.92f, 1.08f) : 1.0f;
+            audioSource.PlayOneShot(projectileClip, (isWitchBoss ? 0.90f : 0.85f) * AudioManager.EnemyVolume);
         }
     }
 
@@ -1284,9 +1299,9 @@ public class SpectralChildBossAI : MonoBehaviour
         savedBgMusicVolume = savedBgMusicSource.volume;
         savedBgMusicPitch = savedBgMusicSource.pitch;
 
-        AudioClip battleClip = bossBattleMusicClip != null
-            ? bossBattleMusicClip
-            : GetOrCreateProceduralBossBattleMusicClip();
+        AudioClip battleClip = isWitchBoss
+            ? GetOrCreateProceduralWitchBossBattleMusicClip()
+            : (bossBattleMusicClip != null ? bossBattleMusicClip : GetOrCreateProceduralBossBattleMusicClip());
 
         if (battleClip != null)
         {
@@ -1421,6 +1436,276 @@ public class SpectralChildBossAI : MonoBehaviour
         cachedProceduralBossMusic = AudioClip.Create("BossBattleTheme_NinoEspectral", totalSamples, 1, sampleRate, false);
         cachedProceduralBossMusic.SetData(samples, 0);
         return cachedProceduralBossMusic;
+    }
+
+    /// <summary>
+    /// Sonido de ataque mágico oscuro de La Bruja (descarga de energía morada / fuego arcano).
+    /// </summary>
+    private static AudioClip GetOrCreateWitchProjectileClip()
+    {
+        if (cachedWitchProjectileClip != null) return cachedWitchProjectileClip;
+
+        const int sampleRate = 22050;
+        const float duration = 0.30f;
+        int totalSamples = Mathf.RoundToInt(duration * sampleRate);
+        float[] samples = new float[totalSamples];
+
+        uint rng = 0x7A4B9C13u;
+        float phaseMain = 0f;
+        float phaseSub = 0f;
+
+        for (int i = 0; i < totalSamples; i++)
+        {
+            float t = i / (float)sampleRate;
+            float norm = t / duration;
+
+            // Barrido descendente de hechizo arcano oscuro (490 Hz -> 135 Hz) con modulación mística
+            float fm = Mathf.Sin(2f * Mathf.PI * 34f * t) * 18f;
+            float freqMain = Mathf.Lerp(490f, 135f, Mathf.Pow(norm, 0.58f)) + fm;
+            float freqSub = freqMain * 0.5f;
+
+            phaseMain += 2f * Mathf.PI * freqMain / sampleRate;
+            phaseSub += 2f * Mathf.PI * freqSub / sampleRate;
+
+            float envAttack = Mathf.Clamp01(t / 0.012f);
+            float envDecay = Mathf.Exp(-t * 9.5f);
+            float env = envAttack * envDecay;
+
+            // Pulso armónico violeta y sub-bajo oscuro
+            float spellCore = (Mathf.Sin(phaseMain) * 0.55f +
+                               Mathf.Sin(phaseMain * 2f) * 0.25f +
+                               Mathf.Sin(phaseSub) * 0.45f) * env;
+
+            // Destello cristalino del báculo al inicio del lanzamiento
+            float chimeEnv = Mathf.Exp(-t * 28f);
+            float crystalChime = (Mathf.Sin(2f * Mathf.PI * 1140f * t) * 0.5f +
+                                  Mathf.Sin(2f * Mathf.PI * 1710f * t) * 0.35f) * chimeEnv * 0.32f;
+
+            // Soplo de llama sombría (ruido filtrado envolvente)
+            rng = rng * 1664525u + 1013904223u;
+            float noise = ((rng & 0xFFFFu) / 32768f) - 1f;
+            float whooshEnv = Mathf.Sin(Mathf.Clamp01(norm * 1.4f) * Mathf.PI) * Mathf.Exp(-t * 6.5f);
+            float darkFlameWhoosh = noise * whooshEnv * 0.24f;
+
+            samples[i] = Mathf.Clamp((spellCore * 0.68f + crystalChime + darkFlameWhoosh) * 0.90f, -0.95f, 0.95f);
+        }
+
+        cachedWitchProjectileClip = AudioClip.Create("Witch_ArcaneBolt_SFX", totalSamples, 1, sampleRate, false);
+        cachedWitchProjectileClip.SetData(samples, 0);
+        return cachedWitchProjectileClip;
+    }
+
+    /// <summary>
+    /// Sonido de sobrecarga de La Bruja (estallido de vórtice arcano y acorde de órgano oscuro).
+    /// </summary>
+    private static AudioClip GetOrCreateWitchOverchargeClip()
+    {
+        if (cachedWitchOverchargeClip != null) return cachedWitchOverchargeClip;
+
+        const int sampleRate = 22050;
+        const float duration = 1.10f;
+        int totalSamples = Mathf.RoundToInt(duration * sampleRate);
+        float[] samples = new float[totalSamples];
+
+        // Acorde disminuido oscuro (E2, Bb2, G3, C#4, F#4)
+        float[] chordFreqs = { 82.41f, 116.54f, 196.00f, 277.18f, 369.99f };
+        uint rng = 0x9E3779B9u;
+
+        for (int i = 0; i < totalSamples; i++)
+        {
+            float t = i / (float)sampleRate;
+            float norm = t / duration;
+
+            float env = Mathf.Clamp01(t / 0.06f) * Mathf.Exp(-norm * 2.1f);
+            float tremolo = 0.78f + 0.22f * Mathf.Sin(2f * Mathf.PI * 14f * t);
+
+            float chordSum = 0f;
+            for (int c = 0; c < chordFreqs.Length; c++)
+            {
+                float f = chordFreqs[c] * (1f + norm * 0.08f);
+                chordSum += Mathf.Sin(2f * Mathf.PI * f * t) + 0.4f * Mathf.Sin(4f * Mathf.PI * f * t);
+            }
+            chordSum /= chordFreqs.Length;
+
+            // Vórtice ascendente místico
+            float vortexFreq = Mathf.Lerp(120f, 640f, Mathf.Pow(norm, 0.7f));
+            float vortex = Mathf.Sin(2f * Mathf.PI * vortexFreq * t) * 0.35f;
+
+            rng = rng * 1664525u + 1013904223u;
+            float noise = ((rng & 0xFFFFu) / 32768f) - 1f;
+            float thunder = noise * Mathf.Exp(-t * 4.5f) * 0.22f;
+
+            samples[i] = Mathf.Clamp((chordSum * 0.65f + vortex + thunder) * env * tremolo, -0.95f, 0.95f);
+        }
+
+        cachedWitchOverchargeClip = AudioClip.Create("Witch_Overcharge_SFX", totalSamples, 1, sampleRate, false);
+        cachedWitchOverchargeClip.SetData(samples, 0);
+        return cachedWitchOverchargeClip;
+    }
+
+    /// <summary>
+    /// Sonido místico de teletransporte y conjuro sombrío de La Bruja.
+    /// </summary>
+    private static AudioClip GetOrCreateWitchLaughClip()
+    {
+        if (cachedWitchLaughClip != null) return cachedWitchLaughClip;
+
+        const int sampleRate = 22050;
+        const float duration = 0.68f;
+        int totalSamples = Mathf.RoundToInt(duration * sampleRate);
+        float[] samples = new float[totalSamples];
+
+        for (int i = 0; i < totalSamples; i++)
+        {
+            float t = i / (float)sampleRate;
+            float norm = t / duration;
+
+            // Modulación rítmica en 4 pulsos arcanos de teletransporte/eco de bruja
+            float pulseGate = 0.55f + 0.45f * Mathf.Sin(2f * Mathf.PI * 6.2f * t);
+            float env = Mathf.Clamp01(t / 0.02f) * Mathf.Exp(-norm * 2.4f) * pulseGate;
+
+            float baseFreq = Mathf.Lerp(360f, 220f, norm) + Mathf.Sin(2f * Mathf.PI * 18f * t) * 24f;
+            float wave = Mathf.Sin(2f * Mathf.PI * baseFreq * t) * 0.55f +
+                         Mathf.Sin(2f * Mathf.PI * (baseFreq * 1.5f) * t) * 0.30f +
+                         Mathf.Sin(2f * Mathf.PI * (baseFreq * 2.5f) * t) * 0.15f;
+
+            samples[i] = Mathf.Clamp(wave * env * 0.85f, -0.95f, 0.95f);
+        }
+
+        cachedWitchLaughClip = AudioClip.Create("Witch_TeleportSpell_SFX", totalSamples, 1, sampleRate, false);
+        cachedWitchLaughClip.SetData(samples, 0);
+        return cachedWitchLaughClip;
+    }
+
+    /// <summary>
+    /// Canción de fondo exclusiva para el combate contra La Bruja (Nivel 3):
+    /// "Aquelarre del Panteón" en Mi Menor Armónico / Frigio Dominante (160 BPM),
+    /// con órgano gótico de catedral, clavecín arcano, bajo galopante ritual y percusión de guerra.
+    /// </summary>
+    private static AudioClip GetOrCreateProceduralWitchBossBattleMusicClip()
+    {
+        if (cachedProceduralWitchBossMusic != null) return cachedProceduralWitchBossMusic;
+
+        const int sampleRate = 22050;
+        const float stepDuration = 0.09375f; // 160 BPM -> 1 semicorchea = 0.09375s
+        const int totalSteps = 128;          // 8 compases de 16 semicorcheas = 12.0s loop exacto
+        int totalSamples = Mathf.RoundToInt(totalSteps * stepDuration * sampleRate);
+
+        float[] samples = new float[totalSamples];
+
+        // Progresión gótica en Mi Menor Armónico (Em - Cmaj7 - Am - B7 - Em - F - B7 - Em)
+        int[] bassRoots = { 40, 36, 33, 35, 40, 41, 35, 40 }; // E2, C2, A1, B1, E2, F2, B1, E2
+
+        // Arpegios de clavecín oscuro (Harpsichord)
+        int[][] covenChords = new int[][]
+        {
+            new int[] { 64, 67, 71, 76 }, // Em: E4, G4, B4, E5
+            new int[] { 60, 64, 67, 71 }, // Cmaj7: C4, E4, G4, B4
+            new int[] { 57, 60, 64, 69 }, // Am: A3, C4, E4, A4
+            new int[] { 59, 63, 66, 71 }, // B7: B3, D#4, F#4, B4
+            new int[] { 64, 67, 71, 79 }, // Em: E4, G4, B4, G5
+            new int[] { 60, 65, 69, 72 }, // F (Napolitano oscuro): C4, F4, A4, C5
+            new int[] { 59, 63, 68, 71 }, // B7(b9): B3, D#4, G4, B4
+            new int[] { 64, 71, 75, 76 }  // Em(maj7)/B -> E5 resolución dramática
+        };
+
+        // Melodía principal gótica de La Bruja (64 corcheas = 8 compases)
+        int[] witchMelody64 = new int[]
+        {
+            // Compás 1 (Em) & Compás 2 (Cmaj7)
+            76, 79, 83, 79,  76, 75, 76, 71,   72, 76, 79, 76,  72, 71, 69, 67,
+            // Compás 3 (Am) & Compás 4 (B7)
+            69, 72, 76, 81,  79, 76, 72, 69,   71, 75, 78, 75,  71, 75, 78, 83,
+            // Compás 5 (Em) & Compás 6 (F)
+            83, 84, 83, 79,  76, 79, 76, 71,   72, 77, 81, 77,  72, 69, 72, 77,
+            // Compás 7 (B7) & Compás 8 (Em)
+            78, 75, 78, 83,  81, 78, 75, 71,   76, 79, 75, 76,  71, 75, 76, 76
+        };
+
+        uint rngState = 0xCAFEBABEu;
+
+        for (int i = 0; i < totalSamples; i++)
+        {
+            float t = i / (float)sampleRate;
+            int step = Mathf.Clamp((int)(t / stepDuration), 0, totalSteps - 1);
+            float stepTime = t - step * stepDuration;
+            float stepNorm = stepTime / stepDuration;
+
+            int bar = (step / 16) % 8;
+            int stepInBar = step % 16;
+
+            // 1. Bajo ritual en octavas galopantes con armónicos oscuros
+            int bassMidi = bassRoots[bar] + ((stepInBar % 2 == 1) ? 12 : 0);
+            if (stepInBar == 12 || stepInBar == 14) bassMidi += 7;
+            float bassFreq = 440f * Mathf.Pow(2f, (bassMidi - 69) / 12f);
+            float bassEnv = Mathf.Exp(-stepNorm * 3.6f);
+            float bassWave = (Mathf.Sin(2f * Mathf.PI * bassFreq * t) * 0.60f +
+                              0.30f * Mathf.Sin(4f * Mathf.PI * bassFreq * t) +
+                              0.20f * Mathf.Sign(Mathf.Sin(2f * Mathf.PI * bassFreq * t))) * bassEnv * 0.27f;
+
+            // 2. Órgano de Catedral Gótico (acordes tenidos con registro de tubos)
+            int[] chord = covenChords[bar];
+            float organWave = 0f;
+            float organVib = 1f + Mathf.Sin(2f * Mathf.PI * 5.2f * t) * 0.003f;
+            for (int c = 0; c < 3; c++)
+            {
+                float cFreq = 440f * Mathf.Pow(2f, (chord[c] - 69) / 12f) * organVib;
+                organWave += Mathf.Sin(2f * Mathf.PI * cFreq * t) * 0.5f +
+                             Mathf.Sin(4f * Mathf.PI * cFreq * t) * 0.3f +
+                             Mathf.Sin(6f * Mathf.PI * cFreq * t) * 0.2f;
+            }
+            organWave = (organWave / 3f) * 0.14f;
+
+            // 3. Clavecín Arcano (Harpsichord ostinato rápido en semicorcheas)
+            int[] arpOrder = { 0, 2, 1, 3, 2, 3, 1, 2 };
+            int arpMidi = chord[arpOrder[stepInBar % 8]];
+            float arpFreq = 440f * Mathf.Pow(2f, (arpMidi - 69) / 12f);
+            float arpEnv = Mathf.Exp(-stepNorm * 6.2f);
+            float harpWave = (Mathf.Sin(2f * Mathf.PI * arpFreq * t) * 0.45f +
+                              Mathf.Sin(4f * Mathf.PI * arpFreq * t) * 0.35f +
+                              Mathf.Sin(6f * Mathf.PI * arpFreq * t) * 0.20f) * arpEnv * 0.17f;
+
+            // 4. Voz solista mística de La Bruja (violín/sintetizador gótico con vibrato expresivo)
+            int leadStep = (step / 2) % 64;
+            int leadMidi = witchMelody64[leadStep];
+            float eighthTime = t - (step / 2) * (stepDuration * 2f);
+            float eighthNorm = eighthTime / (stepDuration * 2f);
+            float vibrato = 1f + Mathf.Sin(2f * Mathf.PI * 7.2f * t) * 0.0055f;
+            float leadFreq = 440f * Mathf.Pow(2f, (leadMidi - 69) / 12f) * vibrato;
+            float leadEnv = Mathf.Clamp01(eighthNorm * 16f) * Mathf.Exp(-eighthNorm * 1.65f);
+            float leadWave = (Mathf.Sin(2f * Mathf.PI * leadFreq * t) * 0.52f +
+                              0.32f * Mathf.Sin(4f * Mathf.PI * leadFreq * t) +
+                              0.18f * Mathf.Sin(6f * Mathf.PI * leadFreq * t)) * leadEnv * 0.25f;
+
+            // 5. Percusión ritual de aquelarre (timbales profundos + redobles)
+            float drumWave = 0f;
+            if (stepInBar == 0 || stepInBar == 3 || stepInBar == 6 || stepInBar == 8 || stepInBar == 11 || stepInBar == 14)
+            {
+                float timpaniPitch = Mathf.Lerp(118f, 46f, Mathf.Clamp01(stepTime * 16f));
+                float timpaniEnv = Mathf.Exp(-stepTime * 20f);
+                drumWave += Mathf.Sin(2f * Mathf.PI * timpaniPitch * stepTime) * timpaniEnv * 0.35f;
+            }
+
+            rngState = rngState * 1664525u + 1013904223u;
+            float whiteNoise = ((rngState & 0xFFFFu) / 32768f) - 1f;
+            bool isSnareHit = (stepInBar == 4 || stepInBar == 12) || (bar % 4 == 3 && stepInBar >= 13);
+            if (isSnareHit)
+            {
+                float snareEnv = Mathf.Exp(-stepTime * 26f);
+                float snareBody = Mathf.Sin(2f * Mathf.PI * 195f * stepTime) * Mathf.Exp(-stepTime * 32f);
+                drumWave += (whiteNoise * 0.72f * snareEnv + snareBody * 0.28f) * 0.25f;
+            }
+
+            float cymbalEnv = Mathf.Exp(-stepTime * (stepInBar % 4 == 0 ? 40f : 70f));
+            drumWave += whiteNoise * cymbalEnv * 0.055f;
+
+            float mix = bassWave + organWave + harpWave + leadWave + drumWave;
+            samples[i] = Mathf.Clamp(mix * 0.92f, -0.95f, 0.95f);
+        }
+
+        cachedProceduralWitchBossMusic = AudioClip.Create("BossBattleTheme_LaBruja", totalSamples, 1, sampleRate, false);
+        cachedProceduralWitchBossMusic.SetData(samples, 0);
+        return cachedProceduralWitchBossMusic;
     }
 
     /// <summary>

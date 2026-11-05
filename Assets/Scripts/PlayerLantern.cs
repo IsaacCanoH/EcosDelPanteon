@@ -14,14 +14,14 @@ public class PlayerLantern : MonoBehaviour
     public SpriteRenderer animaVisual;
     public Sprite[] animaFrames;
     public GoblinNavigation2D navigation;
-    [Min(0.1f)] public float range = 2.4f;
+    [Min(0.1f)] public float range = 2.15f;
     [Range(20f, 180f)] public float angle = 110f;
     [Min(0.1f)] public float cooldown = 1f;
 
     [Header("Mejora del Pilar de Luz (Nivel 3 - Ataque en Radio 360°)")]
     public bool isRadialUpgraded = false;
-    public float radialRange = 3.75f;
-    public int radialDamage = 38;
+    public float radialRange = 2.85f;
+    public int radialDamage = 34;
 
     private UnityEngine.Rendering.SortingGroup visualGroup;
     private SpriteRenderer playerVisual;
@@ -55,7 +55,7 @@ public class PlayerLantern : MonoBehaviour
 
     private void Awake()
     {
-        if (range < 2.4f) range = 2.4f;
+        if (range < 2.15f) range = 2.15f;
         visualGroup = GetComponent<UnityEngine.Rendering.SortingGroup>();
         playerVisual = GetComponent<SpriteRenderer>();
         health = GetComponent<PlayerHealth>();
@@ -70,11 +70,11 @@ public class PlayerLantern : MonoBehaviour
         if (animaVisual != null) animaVisual.enabled = false;
     }
 
-    public void EnableRadialUpgrade(int newDamage = 38, float newRadialRange = 3.75f)
+    public void EnableRadialUpgrade(int newDamage = 34, float newRadialRange = 2.85f)
     {
         isRadialUpgraded = true;
-        radialDamage = Mathf.Max(36, newDamage);
-        radialRange = Mathf.Max(3.5f, newRadialRange);
+        radialDamage = newDamage > 0 ? newDamage : 34;
+        radialRange = Mathf.Clamp(newRadialRange, 2.5f, 3.1f);
         range = radialRange;
 
         if (weaponController == null) weaponController = GetComponent<PlayerWeaponController>();
@@ -133,9 +133,9 @@ public class PlayerLantern : MonoBehaviour
         flashDirection = direction;
         hitObjects.Clear();
 
-        float effectiveRange = isRadialUpgraded ? Mathf.Max(range, radialRange) : range;
+        float effectiveRange = isRadialUpgraded ? radialRange : range;
         int damage = isRadialUpgraded
-            ? Mathf.Max(radialDamage, weaponController != null ? weaponController.lanternDamage : 38)
+            ? radialDamage
             : (weaponController != null ? Mathf.Max(17, weaponController.lanternDamage) : 17);
 
         foreach (var collider in Physics2D.OverlapCircleAll(origin, effectiveRange))
@@ -866,11 +866,9 @@ public class RunePillarLanternUpgrade : MonoBehaviour
         }
         if (lanternHaloObj != null) Destroy(lanternHaloObj);
 
-        // 3. Activar la mejora del Farol: ataque en radio amplio de 360° (3.75m) con más daño que el Cuchillo pero menos que el Machete (38 DMG)
-        int upgradedDamage = weaponCtrl != null
-            ? Mathf.Clamp(weaponCtrl.bigKnifeDamage + 10, weaponCtrl.bigKnifeDamage + 6, weaponCtrl.macheteDamage - 8)
-            : 38;
-        float upgradedRadius = 3.75f;
+        // 3. Activar la mejora del Farol: ataque en radio moderado de 360° (2.85m) con 34 de daño
+        int upgradedDamage = 34;
+        float upgradedRadius = 2.85f;
         if (playerLantern != null)
         {
             playerLantern.EnableRadialUpgrade(upgradedDamage, upgradedRadius);
