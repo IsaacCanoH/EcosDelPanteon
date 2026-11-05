@@ -37,7 +37,8 @@ public class PlayerHealth : MonoBehaviour
     {
         // En Nivel 2 (con ToyCollector o armas avanzadas), la vida base es 100 HP (5 corazones x 20 HP)
         // para soportar balanceadamente daños de 20 (duende normal = 1 corazón), 20 (proyectil/jefe) y 40 (duende gordito = 2 corazones).
-        if ((GetComponent<ToyCollector>() != null || GetComponent<PlayerWeaponController>() != null || UnityEngine.SceneManagement.SceneManager.GetActiveScene().name.Contains("Nivel2")) && maxHealth <= 10)
+        string activeScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        if ((GetComponent<ToyCollector>() != null || GetComponent<PlayerWeaponController>() != null || activeScene.Contains("Nivel2") || activeScene.Contains("Nivel3")) && maxHealth <= 10)
         {
             maxHealth = 100;
             maxHearts = 5;

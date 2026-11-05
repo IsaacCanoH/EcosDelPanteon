@@ -6,9 +6,10 @@ public class EnemyHealth : MonoBehaviour, IDamageable
 {
     public enum EnemyVariant
     {
-        NormalGoblin = 0,       // 50 HP, 10 de daño
-        ChubbyGoblin = 1,       // 80 HP, 20 de daño, suelta 1 orbe de vida (1 corazón) al morir
-        SpectralChildBoss = 2   // 250 HP, 15 proyectil / 20 contacto
+        NormalGoblin = 0,       // 50 HP, 20 de daño
+        ChubbyGoblin = 1,       // 80 HP, 40 de daño, suelta 1 orbe de vida (1 corazón) al morir
+        SpectralChildBoss = 2,  // 250 HP, 15 proyectil / 20 contacto
+        ArcherGoblin = 3        // 50 HP (igual que duende normal), arco/cuchillo, suelta 1 orbe de vida al morir
     }
 
     [Header("Variante y Estadísticas")]
@@ -90,6 +91,17 @@ public class EnemyHealth : MonoBehaviour, IDamageable
                 knockbackForce = 0f;
                 dropsHealthOrbOnDeath = false; // El jefe tiene su propia lógica de drops
                 break;
+
+            case EnemyVariant.ArcherGoblin:
+                maxHealth = 50; // Misma vida que un duende normal
+                knockbackForce = 2.2f;
+                dropsHealthOrbOnDeath = true; // El duende arquero también spawnea orbe de vida al morir
+                if (goblinAI != null)
+                {
+                    goblinAI.attackDamage = 20;
+                    goblinAI.moveSpeed = 1.35f;
+                }
+                break;
         }
         currentHealth = maxHealth;
         OnHealthChanged?.Invoke(currentHealth, maxHealth);
@@ -161,10 +173,10 @@ public class EnemyHealth : MonoBehaviour, IDamageable
         if (IsDead) return;
         IsDead = true;
 
-        // Exclusión estricta de Nivel 1: en Nivel 2, 3 y 4 los duendes grandes sueltan orbes de vida rojos
+        // Exclusión estricta de Nivel 1: en Nivel 2, 3 y 4 los duendes grandes y arqueros sueltan orbes de vida rojos
         if (!IsLevel1Scene())
         {
-            bool dropsOrb = dropsHealthOrbOnDeath || variant == EnemyVariant.ChubbyGoblin;
+            bool dropsOrb = dropsHealthOrbOnDeath || variant == EnemyVariant.ChubbyGoblin || variant == EnemyVariant.ArcherGoblin;
             if (dropsOrb)
             {
                 SpawnOneHeartOrb(transform.position, healthOrbPrefab);
@@ -175,6 +187,8 @@ public class EnemyHealth : MonoBehaviour, IDamageable
 
         if (goblinAI != null) goblinAI.enabled = false;
         if (legacyGoblinCombat != null) legacyGoblinCombat.enabled = false;
+        var archerCtrl = GetComponent<GoblinArcherController>();
+        if (archerCtrl != null) archerCtrl.enabled = false;
 
         if (rb != null)
         {

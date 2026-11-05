@@ -119,6 +119,16 @@ public class PlayerWeaponController : MonoBehaviour
         macheteRange = 1.15f;
         attackArcAngle = 105f;
 
+        // En el Nivel 3 (La Bruja), el jugador inicia con todo el arsenal obtenido en el Nivel 2 (Farol, Cuchillo y Machete)
+        string activeScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        if (activeScene.IndexOf("Nivel3", StringComparison.OrdinalIgnoreCase) >= 0 ||
+            activeScene.IndexOf("Level3", StringComparison.OrdinalIgnoreCase) >= 0)
+        {
+            hasLantern = true;
+            hasBigKnife = true;
+            hasMachete = true;
+        }
+
         if (lanternComponent != null)
         {
             lanternComponent.range = lanternRange;

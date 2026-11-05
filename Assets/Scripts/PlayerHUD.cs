@@ -56,7 +56,9 @@ public class PlayerHUD : MonoBehaviour
         }
         var sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
         return sceneName.IndexOf("Nivel2", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
-               sceneName.IndexOf("Level2", System.StringComparison.OrdinalIgnoreCase) >= 0;
+               sceneName.IndexOf("Level2", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+               sceneName.IndexOf("Nivel3", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+               sceneName.IndexOf("Level3", System.StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
     public void CheckInitToys()
