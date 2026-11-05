@@ -65,9 +65,11 @@ public class ToySearchUI : MonoBehaviour
 
         if (promptText != null)
         {
+            bool isLvl3 = ToyPickup.IsLevel3Scene();
+            string idleLabel = isLvl3 ? "<color=#FFE082>[E]</color> PURIFICAR ALTAR" : "<color=#FFE082>[E]</color> RECOGER JUGUETE";
             promptText.text = isSearching
                 ? $"<color=#FFE082>BUSCANDO...</color> {Mathf.RoundToInt(currentProgress * 100)}%"
-                : "<color=#FFE082>[E]</color> RECOGER JUGUETE";
+                : idleLabel;
         }
     }
 
@@ -189,4 +191,3 @@ public class ToySearchUI : MonoBehaviour
         progressFill.fillAmount = 0f;
     }
 }
-

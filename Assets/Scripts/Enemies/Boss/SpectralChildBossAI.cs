@@ -27,9 +27,12 @@ public class SpectralChildBossAI : MonoBehaviour
 
     [Header("Límites del Mapa (Bardas Perimetrales)")]
     public const float MinMapX = -16.8f;
-    public const float MaxMapX = 16.8f;
-    public const float MinMapY = -7.6f;
+    public const float MaxMapX = 24.5f;
+    public const float MinMapY = -15.5f;
     public const float MaxMapY = 7.6f;
+
+    private float CurrentMaxMapX => isWitchBoss ? 24.5f : 16.8f;
+    private float CurrentMinMapY => isWitchBoss ? -15.5f : -7.6f;
 
     [Header("Ataques y Proyectiles")]
     public GameObject projectilePrefab;
@@ -55,18 +58,28 @@ public class SpectralChildBossAI : MonoBehaviour
 
     [Header("Modo Jefe Nivel 3: La Bruja")]
     public bool isWitchBoss = false;
-    public float teleportInterval = 4.2f;
-    public float overchargeTeleportInterval = 2.1f;
+    public float teleportInterval = 9.5f;           // Teletransporte más leve y espaciado
+    public float overchargeTeleportInterval = 6.0f; // Menos frecuente incluso en sobrecarga
 
     public BossState CurrentState { get; private set; } = BossState.Spawning;
     public event Action<Vector3> OnDeathCinematicFinished;
 
     private static Sprite softGlowSprite;
-    private static Sprite[] cachedWitchSprites;
+    private static Sprite[] cachedWitchSprites; // 0..3 = Idle/Flotando, 4..7 = Canalizando/Atacando
     private static AudioClip cachedProceduralBossMusic;
 
     private float nextTeleportTime = 0f;
     private bool isTeleporting = false;
+    private float witchCastAnimUntil = 0f;
+    private SpriteRenderer witchAuraRenderer;
+
+    [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.SubsystemRegistration)]
+    private static void ResetStaticWitchCache()
+    {
+        softGlowSprite = null;
+        cachedWitchSprites = null;
+        cachedProceduralBossMusic = null;
+    }
 
     // Estado guardado de la música de fondo original del nivel para restaurarla al terminar el combate
     private AudioSource savedBgMusicSource;
@@ -126,10 +139,20 @@ public class SpectralChildBossAI : MonoBehaviour
         if (visualRenderer == null)
             visualRenderer = GetComponentInChildren<SpriteRenderer>();
 
+        // Eliminar WorldDepth2D heredado del prefab para que no ponga sortingOrder=1000+ y evitar que el jefe se vea a través de los árboles
+        WorldDepth2D depth2D = GetComponent<WorldDepth2D>();
+        if (depth2D != null) Destroy(depth2D);
+
+        UnityEngine.Rendering.SortingGroup rootGroup = GetComponent<UnityEngine.Rendering.SortingGroup>();
+        if (rootGroup == null) rootGroup = gameObject.AddComponent<UnityEngine.Rendering.SortingGroup>();
+        rootGroup.sortingLayerName = "Layer 1";
+        rootGroup.sortingOrder = 2;
+
         if (visualRenderer != null)
         {
             visualRenderer.sortingLayerName = "Layer 1";
             visualRenderer.sortingOrder = 2;
+            visualRenderer.spriteSortPoint = SpriteSortPoint.Pivot;
         }
 
         LoadAudioClips();
@@ -144,21 +167,25 @@ public class SpectralChildBossAI : MonoBehaviour
 
         if (isWitchBoss)
         {
-            normalAuraColor = new Color(0.92f, 0.78f, 1.0f, 0.98f);
-            overchargeAuraColor = new Color(0.85f, 0.28f, 1.0f, 1.0f);
+            normalAuraColor = Color.white; // Preservar los colores realistas del pixel-art de La Bruja
+            overchargeAuraColor = new Color(0.92f, 0.58f, 1.0f, 1.0f);
             attackCooldown = 1.65f;
+            teleportInterval = 9.5f;
+            overchargeTeleportInterval = 6.0f;
             if (animator != null) animator.enabled = false;
             EnsureWitchSprites();
             if (visualRenderer != null && cachedWitchSprites != null && cachedWitchSprites.Length > 0)
             {
                 visualRenderer.sprite = cachedWitchSprites[0];
+                visualRenderer.color = Color.white;
             }
+            SetupWitchMysticAura();
         }
 
         if (health != null)
         {
             health.ConfigureVariant(EnemyHealth.EnemyVariant.SpectralChildBoss);
-            int targetMaxHp = isWitchBoss ? 280 : 250;
+            int targetMaxHp = isWitchBoss ? 1250 : 250; // La Bruja tiene 1250 de vida
             health.maxHealth = targetMaxHp;
             health.currentHealth = targetMaxHp;
             health.OnDamageTaken += HandleDamageTaken;
@@ -172,6 +199,26 @@ public class SpectralChildBossAI : MonoBehaviour
         // Si existe GhostChildAI residual, desactivarlo
         var oldAi = GetComponent<GhostChildAI>();
         if (oldAi != null) oldAi.enabled = false;
+    }
+
+    private void SetupWitchMysticAura()
+    {
+        Transform existingAura = transform.Find("WitchMysticAura");
+        if (existingAura != null)
+        {
+            witchAuraRenderer = existingAura.GetComponent<SpriteRenderer>();
+            return;
+        }
+
+        GameObject auraObj = new GameObject("WitchMysticAura");
+        auraObj.transform.SetParent(transform, false);
+        auraObj.transform.localPosition = new Vector3(0f, 0.55f, 0f);
+        auraObj.transform.localScale = new Vector3(1.85f, 2.25f, 1f);
+        witchAuraRenderer = auraObj.AddComponent<SpriteRenderer>();
+        witchAuraRenderer.sprite = GetOrCreateSoftGlowSprite();
+        witchAuraRenderer.sortingLayerName = "Layer 1";
+        witchAuraRenderer.sortingOrder = visualRenderer != null ? visualRenderer.sortingOrder - 1 : 1;
+        witchAuraRenderer.color = new Color(0.62f, 0.14f, 0.88f, 0.42f);
     }
 
     private void LoadAudioClips()
@@ -210,6 +257,12 @@ public class SpectralChildBossAI : MonoBehaviour
         {
             playerTransform = p.transform;
             playerHealth = p.GetComponent<PlayerHealth>();
+        }
+
+        if (isWitchBoss && health != null && health.maxHealth < 1250)
+        {
+            health.maxHealth = 1250;
+            health.currentHealth = 1250;
         }
 
         // Conectar barra de vida del jefe en pantalla
@@ -347,11 +400,11 @@ public class SpectralChildBossAI : MonoBehaviour
             TrySpawnBattleMinions();
         }
 
-        // Habilidad nueva de La Bruja (Nivel 3): Teletransporte místico por la arena
+        // Habilidad de La Bruja (Nivel 3): Teletransporte místico leve y espaciado
         if (isWitchBoss && !isTeleporting && playerTransform != null)
         {
             float distToPlayer = Vector2.Distance(rb.position, playerTransform.position);
-            bool emergencyBlink = distToPlayer < 1.75f && Time.time >= nextTeleportTime - 1.5f;
+            bool emergencyBlink = distToPlayer < 1.15f && Time.time >= nextTeleportTime - 1.2f;
             if (Time.time >= nextTeleportTime || emergencyBlink)
             {
                 float interval = isInOvercharge ? overchargeTeleportInterval : teleportInterval;
@@ -368,11 +421,30 @@ public class SpectralChildBossAI : MonoBehaviour
             return;
         }
 
-        // Verificación de fase de desesperación (últimos 45 de vida: sobrecarga cada 7s que dura 5s)
-        if (health.currentHealth <= 45 && Time.time >= nextDesperationOverchargeTime)
+        if (isWitchBoss)
         {
-            TriggerOvercharge(5.0f);
-            return;
+            // Reglas de sobrecarga de La Bruja (1250 HP):
+            // - Al perder 1/4 de vida (<= 937 HP): carga de 8 segundos, luego se calma.
+            // - Al perder 2/4 de vida (<= 625 HP): carga de 8 segundos, luego se calma.
+            // - Al perder 3/4 de vida (<= 312 HP): carga de 10 segundos, luego se calma 8 segundos y repite 10s de carga cada 8s hasta ser derrotada.
+            if (CheckPendingWitchOverchargeThreshold())
+            {
+                return;
+            }
+            if (overchargesTriggered >= 3 && Time.time >= nextDesperationOverchargeTime)
+            {
+                TriggerOvercharge(10.0f);
+                return;
+            }
+        }
+        else
+        {
+            // Verificación de fase de desesperación del Niño Espectral (Nivel 2)
+            if (health.currentHealth <= 45 && Time.time >= nextDesperationOverchargeTime)
+            {
+                TriggerOvercharge(5.0f);
+                return;
+            }
         }
 
         // Movimiento de acecho lento y contenido cerca del altar y del jugador
@@ -423,7 +495,7 @@ public class SpectralChildBossAI : MonoBehaviour
 
         rb.MovePosition(targetPos);
 
-        if (animator != null)
+        if (animator != null && animator.enabled)
         {
             bool isMoving = moveDir.sqrMagnitude > 0.001f;
             animator.SetBool("IsMoving", isMoving);
@@ -444,11 +516,47 @@ public class SpectralChildBossAI : MonoBehaviour
         }
     }
 
+    private bool CheckPendingWitchOverchargeThreshold()
+    {
+        if (!isWitchBoss || health == null || health.currentHealth <= 0 || isInOvercharge || CurrentState == BossState.Dying)
+            return false;
+
+        int maxHp = Mathf.Max(1, health.maxHealth); // 1250 HP
+        int q1Threshold = Mathf.RoundToInt(maxHp * 0.75f); // Perdió 1/4 (938 HP)
+        int q2Threshold = Mathf.RoundToInt(maxHp * 0.50f); // Perdió 2/4 (625 HP)
+        int q3Threshold = Mathf.RoundToInt(maxHp * 0.25f); // Perdió 3/4 (313 HP)
+
+        if (overchargesTriggered == 0 && health.currentHealth <= q1Threshold)
+        {
+            overchargesTriggered = 1;
+            TriggerOvercharge(8.0f);
+            return true;
+        }
+        if (overchargesTriggered == 1 && health.currentHealth <= q2Threshold)
+        {
+            overchargesTriggered = 2;
+            TriggerOvercharge(8.0f);
+            return true;
+        }
+        if (overchargesTriggered == 2 && health.currentHealth <= q3Threshold)
+        {
+            overchargesTriggered = 3;
+            TriggerOvercharge(10.0f);
+            return true;
+        }
+        return false;
+    }
+
     private void HandleDamageTaken(int _)
     {
         if (isInOvercharge || CurrentState == BossState.Dying) return;
 
-        // Con 250 HP máximos: sobrecargas a 190 HP, 130 HP y 75 HP
+        if (isWitchBoss)
+        {
+            CheckPendingWitchOverchargeThreshold();
+            return;
+        }
+
         if (overchargesTriggered == 0 && health.currentHealth <= 190)
         {
             overchargesTriggered = 1;
@@ -471,7 +579,8 @@ public class SpectralChildBossAI : MonoBehaviour
         isInOvercharge = true;
         CurrentState = BossState.Overcharging;
         overchargeEndTime = Time.time + duration;
-        nextDesperationOverchargeTime = overchargeEndTime + 7.0f;
+        // En La Bruja: tras la sobrecarga del 3/4 de vida (10s), se calma por 8 segundos y luego vuelve a entrar en carga por 10s
+        nextDesperationOverchargeTime = overchargeEndTime + (isWitchBoss ? 8.0f : 7.0f);
 
         if (visualRenderer != null)
         {
@@ -515,7 +624,7 @@ public class SpectralChildBossAI : MonoBehaviour
 
         rb.MovePosition(targetPos);
 
-        if (animator != null)
+        if (animator != null && animator.enabled)
         {
             animator.SetBool("IsMoving", true);
             int dir = Mathf.Abs(toPlayer.x) > Mathf.Abs(toPlayer.y)
@@ -580,7 +689,7 @@ public class SpectralChildBossAI : MonoBehaviour
         CreateProjectile(transform.position + (Vector3)dirToPlayer * 0.45f, Quaternion.Euler(0, 0, 20f) * dirToPlayer, 5.0f, projectileDamage);
         CreateProjectile(transform.position + (Vector3)dirToPlayer * 0.45f, Quaternion.Euler(0, 0, -20f) * dirToPlayer, 5.0f, projectileDamage);
 
-        // 3. Ráfaga directa de proyectiles rápidos dirigidos al jugador (más ráfagas en el modo La Bruja)
+        // 3. Ráfaga directa de proyectiles rápidos dirigidos al jugador
         StartCoroutine(BurstRoutine(isWitchBoss ? 5 : 3, isWitchBoss ? 0.09f : 0.12f));
     }
 
@@ -589,10 +698,13 @@ public class SpectralChildBossAI : MonoBehaviour
         if (!isWitchBoss || visualRenderer == null || CurrentState == BossState.Dying) return;
 
         EnsureWitchSprites();
-        if (cachedWitchSprites != null && cachedWitchSprites.Length > 0)
+        if (cachedWitchSprites != null && cachedWitchSprites.Length >= 8)
         {
-            int frameIdx = Mathf.FloorToInt(Time.time * 7f) % cachedWitchSprites.Length;
+            bool isCasting = CurrentState == BossState.Attacking || isInOvercharge || Time.time < witchCastAnimUntil;
+            int subFrame = Mathf.FloorToInt(Time.time * (isCasting ? 9.5f : 6.5f)) % 4;
+            int frameIdx = (isCasting ? 4 : 0) + subFrame;
             visualRenderer.sprite = cachedWitchSprites[frameIdx];
+
             if (playerTransform != null)
             {
                 float dx = playerTransform.position.x - transform.position.x;
@@ -601,9 +713,21 @@ public class SpectralChildBossAI : MonoBehaviour
                     visualRenderer.flipX = dx < 0f;
                 }
             }
+
+            if (witchAuraRenderer != null)
+            {
+                float auraPulse = 0.35f + Mathf.Sin(Time.time * 4.5f) * 0.12f + (isCasting ? 0.22f : 0f);
+                witchAuraRenderer.color = new Color(0.68f, 0.18f, 0.96f, auraPulse);
+                float sc = 1.85f + Mathf.Sin(Time.time * 3.2f) * 0.14f + (isCasting ? 0.25f : 0f);
+                witchAuraRenderer.transform.localScale = new Vector3(sc, sc * 1.2f, 1f);
+            }
         }
     }
 
+    /// <summary>
+    /// Teletransporte místico leve de La Bruja: se desplaza una distancia corta y táctica (1.6m a 2.6m)
+    /// respecto a su posición actual, con menor frecuencia para que el combate sea justo y fluido.
+    /// </summary>
     private IEnumerator WitchTeleportRoutine()
     {
         if (isTeleporting || CurrentState == BossState.Dying) yield break;
@@ -614,44 +738,46 @@ public class SpectralChildBossAI : MonoBehaviour
 
         if (audioSource != null && laughClip != null)
         {
-            audioSource.PlayOneShot(laughClip, 0.70f * AudioManager.EnemyVolume);
+            audioSource.PlayOneShot(laughClip, 0.65f * AudioManager.EnemyVolume);
         }
 
-        // Desvanecimiento rápido de teletransporte
-        float vanishTime = 0.20f;
+        // Desvanecimiento suave de teletransporte
+        float vanishTime = 0.22f;
         float t = 0f;
         Vector3 origScale = transform.localScale;
         while (t < vanishTime)
         {
             t += Time.deltaTime;
             float p = Mathf.Clamp01(t / vanishTime);
-            transform.localScale = new Vector3(Mathf.Lerp(origScale.x, 0.15f, p), Mathf.Lerp(origScale.y, 1.45f, p), 1f);
+            transform.localScale = new Vector3(Mathf.Lerp(origScale.x, 0.25f, p), Mathf.Lerp(origScale.y, 1.32f, p), 1f);
             if (visualRenderer != null)
             {
-                visualRenderer.color = new Color(0.85f, 0.25f, 1.0f, 1f - p);
+                visualRenderer.color = new Color(0.85f, 0.35f, 1.0f, 1f - p);
             }
             yield return null;
         }
 
-        // Elegir nueva posición libre alrededor del altar y a distancia táctica del jugador
-        Vector2 bestTarget = altarOrigin;
+        // Elegir nueva posición cercana (desplazamiento corto y leve de 1.6m a 2.6m desde donde estaba)
+        Vector2 bestTarget = oldPos;
         Vector2 playerPos = playerTransform != null ? (Vector2)playerTransform.position : altarOrigin;
         for (int attempt = 0; attempt < 16; attempt++)
         {
             float angle = UnityEngine.Random.Range(0f, 360f) * Mathf.Deg2Rad;
-            float dist = UnityEngine.Random.Range(2.6f, 4.4f);
-            Vector2 candidate = playerPos + new Vector2(Mathf.Cos(angle) * dist, Mathf.Sin(angle) * dist);
+            float stepDist = UnityEngine.Random.Range(1.6f, 2.65f);
+            Vector2 candidate = (Vector2)oldPos + new Vector2(Mathf.Cos(angle) * stepDist, Mathf.Sin(angle) * stepDist);
 
-            if (Vector2.Distance(candidate, altarOrigin) > maxAltarLeash)
+            if (Vector2.Distance(candidate, altarOrigin) > maxAltarLeash * 0.9f)
             {
-                Vector2 fromAltar = (candidate - altarOrigin).normalized;
-                candidate = altarOrigin + fromAltar * UnityEngine.Random.Range(2.2f, maxAltarLeash * 0.85f);
+                Vector2 toAltar = (altarOrigin - (Vector2)oldPos).normalized;
+                candidate = (Vector2)oldPos + toAltar * stepDist;
             }
 
             candidate.x = Mathf.Clamp(candidate.x, MinMapX, MaxMapX);
             candidate.y = Mathf.Clamp(candidate.y, MinMapY, MaxMapY);
 
-            if (!IsPositionBlocked(candidate, 0.58f) && Vector2.Distance(candidate, oldPos) > 1.8f)
+            if (!IsPositionBlocked(candidate, 0.58f) &&
+                Vector2.Distance(candidate, playerPos) >= 2.0f &&
+                Vector2.Distance(candidate, oldPos) >= 1.2f)
             {
                 bestTarget = candidate;
                 break;
@@ -665,13 +791,13 @@ public class SpectralChildBossAI : MonoBehaviour
         SpawnTeleportRuneBurst(bestTarget);
 
         // Reaparición mística
-        float appearTime = 0.20f;
+        float appearTime = 0.22f;
         t = 0f;
         while (t < appearTime)
         {
             t += Time.deltaTime;
             float p = Mathf.Clamp01(t / appearTime);
-            transform.localScale = new Vector3(Mathf.Lerp(0.15f, origScale.x, p), Mathf.Lerp(1.45f, origScale.y, p), 1f);
+            transform.localScale = new Vector3(Mathf.Lerp(0.25f, origScale.x, p), Mathf.Lerp(1.32f, origScale.y, p), 1f);
             if (visualRenderer != null)
             {
                 Color baseCol = isInOvercharge ? overchargeAuraColor : normalAuraColor;
@@ -688,10 +814,10 @@ public class SpectralChildBossAI : MonoBehaviour
 
         isTeleporting = false;
 
-        // Al salir del teletransporte, La Bruja lanza inmediatamente una ráfaga morada rápida
+        // Al salir del teletransporte leve, lanza una breve ráfaga de 2 orbes morados
         if (health != null && health.currentHealth > 0 && playerTransform != null)
         {
-            StartCoroutine(BurstRoutine(4, 0.10f));
+            StartCoroutine(BurstRoutine(2, 0.14f));
         }
     }
 
@@ -707,7 +833,7 @@ public class SpectralChildBossAI : MonoBehaviour
         SpriteRenderer ringSr = ringObj.AddComponent<SpriteRenderer>();
         ringSr.sprite = GetOrCreateSoftGlowSprite();
         ringSr.sortingLayerName = "Layer 1";
-        ringSr.sortingOrder = 5;
+        ringSr.sortingOrder = 2;
         ringSr.color = new Color(0.82f, 0.25f, 1.0f, 0.9f);
 
         float dur = 0.35f;
@@ -716,9 +842,9 @@ public class SpectralChildBossAI : MonoBehaviour
         {
             el += Time.deltaTime;
             float p = Mathf.Clamp01(el / dur);
-            float sc = Mathf.Lerp(0.8f, 2.6f, p);
+            float sc = Mathf.Lerp(0.8f, 2.2f, p);
             ringObj.transform.localScale = new Vector3(sc, sc, 1f);
-            ringSr.color = new Color(0.82f, 0.25f, 1.0f, (1f - p) * 0.9f);
+            ringSr.color = new Color(0.82f, 0.25f, 1.0f, (1f - p) * 0.85f);
             yield return null;
         }
 
@@ -739,10 +865,11 @@ public class SpectralChildBossAI : MonoBehaviour
         activeMinions.RemoveAll(m => m == null || m.IsDead);
         if (activeMinions.Count >= maxActiveMinions) return;
 
-        SpawnMinion(false);
+        // En Nivel 3 priorizar duendes fuertes (Chubby) alternados con arqueros y base
+        SpawnMinion(true);
         if (activeMinions.Count < maxActiveMinions)
         {
-            SpawnMinion(true);
+            SpawnMinion(false);
         }
     }
 
@@ -771,8 +898,9 @@ public class SpectralChildBossAI : MonoBehaviour
 
         GoblinVariantConfig cfg = minionObj.GetComponent<GoblinVariantConfig>();
         if (cfg == null) cfg = minionObj.AddComponent<GoblinVariantConfig>();
-        bool spawnArcher = isWitchBoss && !isChubby && UnityEngine.Random.value < 0.65f;
-        cfg.SetVariant(isChubby, spawnArcher);
+        bool spawnArcher = isWitchBoss && !isChubby && UnityEngine.Random.value < 0.6f;
+        bool hasGreenAura = isWitchBoss && UnityEngine.Random.value < 0.55f;
+        cfg.SetVariant(isChubby, spawnArcher, hasGreenAura);
 
         GoblinAI ai = minionObj.GetComponent<GoblinAI>();
         if (ai != null)
@@ -799,11 +927,12 @@ public class SpectralChildBossAI : MonoBehaviour
         activeMinions.Add(eh);
     }
 
-    #region Ataques Normales con Energía Azul
+    #region Ataques Normales y Ráfagas Místicas
 
     private void ExecuteNextAttackPattern()
     {
         CurrentState = BossState.Attacking;
+        witchCastAnimUntil = Time.time + 0.75f;
 
         if (isWitchBoss)
         {
@@ -857,7 +986,7 @@ public class SpectralChildBossAI : MonoBehaviour
         }
 
         attackCycleIndex = (attackCycleIndex + 1) % 4;
-        StartCoroutine(ResetAttackStateRoutine(0.45f));
+        StartCoroutine(ResetAttackStateRoutine(0.55f));
     }
 
     private IEnumerator TripleSpreadBurstRoutine(int wavesCount, float waveInterval)
@@ -886,7 +1015,9 @@ public class SpectralChildBossAI : MonoBehaviour
 
     private void PlayAttackAnimationAndSound(Vector2 dir)
     {
-        if (animator != null)
+        witchCastAnimUntil = Time.time + 0.45f;
+
+        if (animator != null && animator.enabled)
         {
             int dirInt = Mathf.Abs(dir.x) > Mathf.Abs(dir.y)
                 ? (dir.x > 0 ? 2 : 3)
@@ -904,7 +1035,7 @@ public class SpectralChildBossAI : MonoBehaviour
     private IEnumerator ResetAttackStateRoutine(float delay)
     {
         yield return new WaitForSeconds(delay);
-        if (animator != null) animator.SetInteger("ActionState", 0);
+        if (animator != null && animator.enabled) animator.SetInteger("ActionState", 0);
         if (CurrentState == BossState.Attacking)
             CurrentState = BossState.Hovering;
     }
@@ -1014,7 +1145,7 @@ public class SpectralChildBossAI : MonoBehaviour
     {
         if (bodyCollider != null) bodyCollider.enabled = false;
         if (rb != null) rb.velocity = Vector2.zero;
-        if (animator != null)
+        if (animator != null && animator.enabled)
         {
             animator.SetBool("IsMoving", false);
             animator.SetInteger("ActionState", 0);
@@ -1190,10 +1321,6 @@ public class SpectralChildBossAI : MonoBehaviour
         }
     }
 
-    /// <summary>
-    /// Sintetiza un tema de batalla gótico/espectral de alta energía en Re menor armónico (150 BPM, loop perfecto de 12.8s)
-    /// con bajo ostinato, órgano/clavecín rápido en semicorcheas, motivo Dies Irae y percusión rítmica de combate.
-    /// </summary>
     private static AudioClip GetOrCreateProceduralBossBattleMusicClip()
     {
         if (cachedProceduralBossMusic != null) return cachedProceduralBossMusic;
@@ -1205,12 +1332,6 @@ public class SpectralChildBossAI : MonoBehaviour
 
         float[] samples = new float[totalSamples];
 
-        // Progresión armónica gótica de 8 compases en Re menor armónico (MIDI notes):
-        // Compases 0-1: Dm (D, F, A)
-        // Compases 2-3: Bb (Bb, D, F)
-        // Compases 4-5: Gm (G, Bb, D)
-        // Compás 6:     Edim7 / Bb7 (G, Bb, C#, E)
-        // Compás 7:     A7 (A, C#, E, G)
         int[] bassRoots = { 38, 38, 34, 34, 43, 43, 37, 33 }; // D2, D2, Bb1, Bb1, G2, G2, C#2, A1
 
         int[][] arpChords = new int[][]
@@ -1225,16 +1346,11 @@ public class SpectralChildBossAI : MonoBehaviour
             new int[] { 57, 61, 64, 69 }  // A: A3, C#4, E4, A4
         };
 
-        // Melodía principal (variación intensa tipo Dies Irae / Lacrimosa en corcheas, 64 notas para los 8 compases)
         int[] leadMelody64 = new int[]
         {
-            // Compás 0-1 (Dm)
             77, 76, 77, 74,  76, 73, 74, 69,   77, 79, 81, 79,  77, 76, 74, 74,
-            // Compás 2-3 (Bb)
             74, 72, 74, 70,  72, 69, 70, 65,   74, 76, 77, 76,  74, 72, 70, 70,
-            // Compás 4-5 (Gm)
             79, 77, 79, 74,  77, 74, 70, 67,   74, 77, 79, 82,  81, 79, 77, 74,
-            // Compás 6 (Edim7) y Compás 7 (A7 -> Dm)
             76, 73, 76, 79,  82, 79, 76, 73,   81, 79, 76, 73,  74, 76, 79, 81
         };
 
@@ -1245,12 +1361,11 @@ public class SpectralChildBossAI : MonoBehaviour
             float t = i / (float)sampleRate;
             int step = Mathf.Clamp((int)(t / stepDuration), 0, totalSteps - 1);
             float stepTime = t - step * stepDuration;
-            float stepNorm = stepTime / stepDuration; // 0..1 dentro de la semicorchea
+            float stepNorm = stepTime / stepDuration;
 
             int bar = (step / 16) % 8;
             int stepInBar = step % 16;
 
-            // 1. BAJO OSTINATO EN OCTAVAS (pulsante en cada semicorchea)
             int bassMidi = bassRoots[bar] + ((stepInBar % 2 == 1) ? 12 : 0);
             if (stepInBar == 14 || stepInBar == 15) bassMidi += 7;
             float bassFreq = 440f * Mathf.Pow(2f, (bassMidi - 69) / 12f);
@@ -1258,7 +1373,6 @@ public class SpectralChildBossAI : MonoBehaviour
             float bassWave = (Mathf.Sin(2f * Mathf.PI * bassFreq * t) * 0.65f +
                               Mathf.Sign(Mathf.Sin(2f * Mathf.PI * bassFreq * t)) * 0.35f) * bassEnv * 0.28f;
 
-            // 2. ARPEGIO RÁPIDO DE ÓRGANO / CLAVECÍN GÓTICO (semicorcheas)
             int[] chord = arpChords[bar];
             int arpIdx = (stepInBar % 4 == 3) ? 1 : (stepInBar % 4);
             int arpMidi = chord[arpIdx];
@@ -1268,7 +1382,6 @@ public class SpectralChildBossAI : MonoBehaviour
                              0.5f * Mathf.Sin(4f * Mathf.PI * arpFreq * t) +
                              0.25f * Mathf.Sin(6f * Mathf.PI * arpFreq * t)) * arpEnv * 0.16f;
 
-            // 3. MELODÍA LÍDER ESPECTRAL (corcheas con vibrato dramático)
             int leadStep = (step / 2) % 64;
             int leadMidi = leadMelody64[leadStep];
             float eighthTime = t - (step / 2) * (stepDuration * 2f);
@@ -1280,10 +1393,8 @@ public class SpectralChildBossAI : MonoBehaviour
                               0.35f * Mathf.Sin(4f * Mathf.PI * leadFreq * t) +
                               0.15f * Mathf.Sin(6f * Mathf.PI * leadFreq * t)) * leadEnv * 0.24f;
 
-            // 4. PERCUSIÓN DE COMBATE (Bombo en 0, 6, 8, 14; Caja en 4 y 12; Hi-hat en cada semicorchea)
             float drumWave = 0f;
 
-            // Kick (Bombo profundo)
             if (stepInBar == 0 || stepInBar == 6 || stepInBar == 8 || stepInBar == 14)
             {
                 float kickPitch = Mathf.Lerp(135f, 42f, Mathf.Clamp01(stepTime * 18f));
@@ -1291,7 +1402,6 @@ public class SpectralChildBossAI : MonoBehaviour
                 drumWave += Mathf.Sin(2f * Mathf.PI * kickPitch * stepTime) * kickEnv * 0.34f;
             }
 
-            // Snare (Caja de impacto en tiempos 2 y 4 -> pasos 4 y 12)
             rngState = rngState * 1664525u + 1013904223u;
             float whiteNoise = ((rngState & 0xFFFFu) / 32768f) - 1f;
             if (stepInBar == 4 || stepInBar == 12)
@@ -1301,7 +1411,6 @@ public class SpectralChildBossAI : MonoBehaviour
                 drumWave += (whiteNoise * 0.75f * snareEnv + snareBody * 0.25f) * 0.26f;
             }
 
-            // Hi-hat metálico rápido
             float hatEnv = Mathf.Exp(-stepTime * (stepInBar % 2 == 0 ? 55f : 75f));
             drumWave += whiteNoise * hatEnv * 0.06f;
 
@@ -1314,139 +1423,342 @@ public class SpectralChildBossAI : MonoBehaviour
         return cachedProceduralBossMusic;
     }
 
+    /// <summary>
+    /// Genera 8 frames de animación pixel-art realista de alta definición (64x80) para La Bruja:
+    /// - Frames 0..3: Levitación acechante con ondeo de manto de terciopelo, vestido rasgado, mechones de cabello plateado y báculo arcano.
+    /// - Frames 4..7: Pose de canalización y ataque lanzando ráfagas de magia oscura con runas y destellos violetas en ambas manos.
+    /// </summary>
     private static void EnsureWitchSprites()
     {
-        if (cachedWitchSprites != null && cachedWitchSprites.Length == 4 && cachedWitchSprites[0] != null)
+        if (cachedWitchSprites != null && cachedWitchSprites.Length == 8 && cachedWitchSprites[0] != null)
             return;
 
-        cachedWitchSprites = new Sprite[4];
+        cachedWitchSprites = new Sprite[8];
         for (int f = 0; f < 4; f++)
         {
-            cachedWitchSprites[f] = CreateWitchSpriteFrame(f);
+            cachedWitchSprites[f] = CreateWitchSpriteFrame(f, isCasting: false);
+            cachedWitchSprites[4 + f] = CreateWitchSpriteFrame(f, isCasting: true);
         }
     }
 
-    private static Sprite CreateWitchSpriteFrame(int frame)
+    private static Sprite CreateWitchSpriteFrame(int subFrame, bool isCasting)
     {
-        int w = 44;
-        int h = 58;
+        int w = 64;
+        int h = 80;
         Texture2D tex = new Texture2D(w, h, TextureFormat.RGBA32, false);
         tex.filterMode = FilterMode.Point;
+        tex.wrapMode = TextureWrapMode.Clamp;
+
         for (int y = 0; y < h; y++)
             for (int x = 0; x < w; x++)
                 tex.SetPixel(x, y, Color.clear);
 
-        Color robeDark = new Color(0.11f, 0.05f, 0.18f, 1f);
-        Color robeMid = new Color(0.22f, 0.09f, 0.34f, 1f);
-        Color robeLight = new Color(0.38f, 0.16f, 0.56f, 1f);
-        Color hatBrim = new Color(0.14f, 0.06f, 0.22f, 1f);
-        Color hatBand = new Color(0.76f, 0.22f, 0.98f, 1f);
-        Color buckleGold = new Color(0.96f, 0.82f, 0.28f, 1f);
-        Color skinWitch = new Color(0.68f, 0.78f, 0.64f, 1f);
-        Color eyeGlow = new Color(0.95f, 0.35f, 1.0f, 1f);
-        Color staffWood = new Color(0.38f, 0.22f, 0.12f, 1f);
-        Color crystalCore = new Color(0.98f, 0.78f, 1.0f, 1f);
-        Color crystalOuter = new Color(0.75f, 0.18f, 0.98f, 1f);
+        // Paleta realista de fantasía oscura para La Bruja del Panteón
+        Color outline = new Color(0.07f, 0.03f, 0.11f, 1f);
+        Color cloakShadow = new Color(0.12f, 0.07f, 0.20f, 1f);
+        Color cloakMid = new Color(0.20f, 0.11f, 0.32f, 1f);
+        Color cloakHighlight = new Color(0.32f, 0.18f, 0.48f, 1f);
+        Color dressCrimsonDark = new Color(0.28f, 0.07f, 0.24f, 1f);
+        Color dressCrimsonMid = new Color(0.46f, 0.12f, 0.38f, 1f);
+        Color dressCrimsonLight = new Color(0.66f, 0.20f, 0.54f, 1f);
+        Color corsetGold = new Color(0.86f, 0.68f, 0.24f, 1f);
 
-        int cx = 20;
-        int bobY = (frame == 1 || frame == 2) ? 1 : 0;
-        float phase = frame * (Mathf.PI * 0.5f);
+        Color skinShadow = new Color(0.56f, 0.62f, 0.54f, 1f);
+        Color skinMid = new Color(0.72f, 0.78f, 0.68f, 1f);
+        Color skinHighlight = new Color(0.84f, 0.88f, 0.80f, 1f);
+        Color hairDark = new Color(0.42f, 0.44f, 0.50f, 1f);
+        Color hairSilver = new Color(0.72f, 0.75f, 0.82f, 1f);
+        Color eyeViolet = new Color(0.96f, 0.26f, 1.0f, 1f);
+        Color eyeCore = new Color(1.0f, 0.92f, 1.0f, 1f);
 
-        // 1. Túnica oscura y púrpura de La Bruja con bordes ondeantes
-        for (int y = 4 + bobY; y <= 34 + bobY; y++)
+        Color hatDark = new Color(0.10f, 0.05f, 0.16f, 1f);
+        Color hatMid = new Color(0.18f, 0.10f, 0.28f, 1f);
+        Color hatBand = new Color(0.64f, 0.14f, 0.48f, 1f);
+        Color buckleGold = new Color(0.98f, 0.82f, 0.28f, 1f);
+
+        Color woodDark = new Color(0.26f, 0.14f, 0.07f, 1f);
+        Color woodMid = new Color(0.44f, 0.25f, 0.12f, 1f);
+        Color woodLight = new Color(0.60f, 0.36f, 0.18f, 1f);
+
+        Color orbGlowOuter = new Color(0.68f, 0.16f, 0.96f, 0.55f);
+        Color orbMid = new Color(0.88f, 0.32f, 1.0f, 1f);
+        Color orbCore = new Color(1.0f, 0.90f, 1.0f, 1f);
+
+        int cx = 29;
+        float phase = subFrame * (Mathf.PI * 0.5f);
+        int bobY = (subFrame == 1 || subFrame == 2) ? 1 : 0;
+
+        // 1. Sombra mística flotante en el suelo (Y = 2..5)
+        for (int y = 2; y <= 5; y++)
         {
-            float t = (y - (4f + bobY)) / 30f;
-            float halfW = Mathf.Lerp(10.5f, 4.5f, Mathf.Pow(t, 0.8f));
-            float sway = Mathf.Sin(phase + y * 0.25f) * Mathf.Lerp(1.5f, 0.2f, t);
+            for (int x = cx - 11; x <= cx + 11; x++)
+            {
+                float nx = (x - cx) / 11f;
+                float ny = (y - 3.5f) / 2.0f;
+                if (nx * nx + ny * ny <= 1f)
+                {
+                    tex.SetPixel(x, y, new Color(0.32f, 0.08f, 0.48f, 0.42f));
+                }
+            }
+        }
 
-            int minX = Mathf.RoundToInt(cx + sway - halfW);
-            int maxX = Mathf.RoundToInt(cx + sway + halfW);
+        // 2. Manto exterior ondeante y falda en capas con pliegues realistas (Y = 7..45)
+        for (int y = 7 + bobY; y <= 45 + bobY; y++)
+        {
+            float t = (y - (7f + bobY)) / 38f; // 0 en el borde inferior, 1 en los hombros
+            float flare = isCasting ? 1.15f : 1.0f;
+            float halfW = Mathf.Lerp(14.5f * flare, 6.0f, Mathf.Pow(t, 0.75f));
+            float wave = Mathf.Sin(phase + y * 0.22f) * Mathf.Lerp(2.0f, 0.25f, t);
+
+            int minX = Mathf.RoundToInt(cx + wave - halfW);
+            int maxX = Mathf.RoundToInt(cx + wave + halfW);
+
             for (int x = minX; x <= maxX; x++)
             {
-                if (x < 1 || x >= w - 1) continue;
-                int jaggedCut = 4 + bobY + ((x + frame) % 3);
-                if (y < jaggedCut) continue;
+                if (x < 2 || x >= w - 2) continue;
 
-                float distNorm = Mathf.Abs(x - (cx + sway)) / Mathf.Max(1f, halfW);
-                Color c = distNorm > 0.75f ? robeDark : (Mathf.Abs(x - cx) <= 2 ? robeLight : robeMid);
-                tex.SetPixel(x, y, c);
+                // Dobladillo inferior desgarrado con picos de tela
+                int hemCut = 7 + bobY + Mathf.RoundToInt(Mathf.Sin(x * 0.9f + subFrame) * 1.6f + 1.6f);
+                if (y < hemCut) continue;
+
+                float relX = (x - (cx + wave)) / Mathf.Max(1f, halfW);
+                float absRelX = Mathf.Abs(relX);
+
+                if (absRelX >= 0.90f || y == hemCut)
+                {
+                    tex.SetPixel(x, y, outline);
+                }
+                else if (absRelX >= 0.46f)
+                {
+                    // Manto exterior oscuro con pliegues verticales sombreados
+                    float fold = Mathf.Sin(x * 0.85f + phase * 0.5f);
+                    Color c = (fold > 0.35f && relX < 0f) ? cloakHighlight : ((fold < -0.25f || relX > 0.2f) ? cloakShadow : cloakMid);
+                    tex.SetPixel(x, y, c);
+                }
+                else
+                {
+                    // Vestido central carmesí/púrpura y corsé con cordones dorados
+                    if (y >= 31 + bobY && y <= 42 + bobY)
+                    {
+                        if (Mathf.Abs(x - cx) <= 1 && (y % 2 == 0))
+                            tex.SetPixel(x, y, corsetGold);
+                        else
+                            tex.SetPixel(x, y, (x < cx) ? dressCrimsonMid : dressCrimsonDark);
+                    }
+                    else
+                    {
+                        float skirtFold = Mathf.Cos(x * 0.95f + phase);
+                        Color sc = skirtFold > 0.4f ? dressCrimsonLight : (skirtFold < -0.3f ? dressCrimsonDark : dressCrimsonMid);
+                        tex.SetPixel(x, y, sc);
+                    }
+                }
             }
         }
 
-        // 2. Rostro y cabello de La Bruja
-        for (int y = 34 + bobY; y <= 40 + bobY; y++)
+        // 3. Cuello alto del manto y hombreras (Y = 43..49)
+        for (int y = 43 + bobY; y <= 49 + bobY; y++)
         {
-            for (int x = cx - 3; x <= cx + 3; x++)
+            int collarW = (y >= 47 + bobY) ? 8 : 7;
+            for (int x = cx - collarW; x <= cx + collarW; x++)
             {
-                tex.SetPixel(x, y, skinWitch);
+                if (Mathf.Abs(x - cx) >= collarW - 1)
+                    tex.SetPixel(x, y, outline);
+                else if (Mathf.Abs(x - cx) >= 4)
+                    tex.SetPixel(x, y, (x < cx) ? cloakHighlight : cloakShadow);
             }
-            // Mechones grises/oscuros laterales
-            tex.SetPixel(cx - 4, y, robeDark);
-            tex.SetPixel(cx + 4, y, robeDark);
         }
 
-        // Ojos brillantes morados/magenta
-        tex.SetPixel(cx - 2, 38 + bobY, eyeGlow);
-        tex.SetPixel(cx + 2, 38 + bobY, eyeGlow);
-
-        // 3. Sombrero puntiagudo clásico de Bruja
-        // Ala ancha del sombrero
-        for (int x = cx - 9; x <= cx + 9; x++)
+        // 4. Rostro realista de La Bruja (pómulos marcados, barbilla afilada, nariz ganchuda y ojos brillantes) (Y = 45..55)
+        for (int y = 45 + bobY; y <= 55 + bobY; y++)
         {
-            tex.SetPixel(x, 41 + bobY, hatBrim);
-            if (Mathf.Abs(x - cx) <= 7)
-                tex.SetPixel(x, 42 + bobY, robeMid);
+            float ft = (y - (45f + bobY)) / 10f;
+            int faceHalfW = ft < 0.3f ? Mathf.RoundToInt(Mathf.Lerp(2f, 4.5f, ft / 0.3f)) : 4;
+            for (int x = cx - faceHalfW; x <= cx + faceHalfW; x++)
+            {
+                if (x == cx - faceHalfW || x == cx + faceHalfW)
+                    tex.SetPixel(x, y, skinShadow);
+                else if (x < cx)
+                    tex.SetPixel(x, y, skinHighlight);
+                else
+                    tex.SetPixel(x, y, skinMid);
+            }
         }
-        // Cinta morada y hebilla dorada
-        for (int x = cx - 5; x <= cx + 5; x++)
-        {
-            tex.SetPixel(x, 43 + bobY, hatBand);
-        }
-        tex.SetPixel(cx, 43 + bobY, buckleGold);
-        tex.SetPixel(cx - 1, 43 + bobY, buckleGold);
 
-        // Cono alto del sombrero inclinado en la punta
-        for (int y = 44 + bobY; y <= 55 + bobY; y++)
+        // Nariz aguileña sombreada y sonrisa siniestra
+        tex.SetPixel(cx + 1, 50 + bobY, skinHighlight);
+        tex.SetPixel(cx + 2, 49 + bobY, skinShadow);
+        tex.SetPixel(cx - 1, 47 + bobY, outline);
+        tex.SetPixel(cx, 47 + bobY, outline);
+        tex.SetPixel(cx + 1, 48 + bobY, outline);
+
+        // Ojos místicos con pupila brillante
+        tex.SetPixel(cx - 2, 51 + bobY, eyeViolet);
+        tex.SetPixel(cx - 1, 51 + bobY, isCasting ? eyeCore : eyeViolet);
+        tex.SetPixel(cx + 2, 51 + bobY, eyeViolet);
+        tex.SetPixel(cx + 3, 51 + bobY, isCasting ? eyeCore : eyeViolet);
+
+        // 5. Cabello largo canoso/plateado cayendo sobre los hombros con movimiento (Y = 36..55)
+        for (int y = 36 + bobY; y <= 54 + bobY; y++)
         {
-            float ht = (y - (44f + bobY)) / 11f;
-            float coneHalfW = Mathf.Lerp(5.0f, 0.8f, ht);
-            float bend = ht * ht * 2.5f;
+            int hairWave = Mathf.RoundToInt(Mathf.Sin(phase + y * 0.3f) * (isCasting ? 1.6f : 0.9f));
+            int lx = cx - 5 + hairWave;
+            int rx = cx + 5 - hairWave;
+            tex.SetPixel(lx, y, hairSilver);
+            tex.SetPixel(lx - 1, y, hairDark);
+            tex.SetPixel(rx, y, hairDark);
+            tex.SetPixel(rx + 1, y, hairSilver);
+        }
+
+        // 6. Sombrero puntiagudo realista con ala curva, pliegues y hebilla de oro (Y = 54..75)
+        // Ala ancha curva (Y = 54..57)
+        for (int dx = -14; dx <= 14; dx++)
+        {
+            int brimCurve = Mathf.RoundToInt((dx * dx) / 65f);
+            int by = 55 + bobY - brimCurve;
+            tex.SetPixel(cx + dx, by, outline);
+            tex.SetPixel(cx + dx, by + 1, dx < 0 ? cloakHighlight : hatMid);
+            if (Mathf.Abs(dx) <= 11)
+                tex.SetPixel(cx + dx, by + 2, hatDark);
+        }
+
+        // Cinta carmesí y hebilla de oro en la base de la copa (Y = 57..59)
+        for (int x = cx - 7; x <= cx + 7; x++)
+        {
+            tex.SetPixel(x, 57 + bobY, hatBand);
+            tex.SetPixel(x, 58 + bobY, hatBand);
+        }
+        for (int y = 57 + bobY; y <= 59 + bobY; y++)
+        {
+            for (int x = cx - 2; x <= cx + 2; x++)
+            {
+                if (x == cx - 2 || x == cx + 2 || y == 57 + bobY || y == 59 + bobY)
+                    tex.SetPixel(x, y, buckleGold);
+            }
+        }
+
+        // Copa cónica alta con pliegues y punta doblada hacia la izquierda (Y = 59..75)
+        for (int y = 59 + bobY; y <= 75 + bobY; y++)
+        {
+            float ht = (y - (59f + bobY)) / 16f;
+            float coneHalfW = Mathf.Lerp(6.8f, 0.9f, ht);
+            float bend = ht * ht * (4.5f + Mathf.Sin(phase) * 0.8f);
             int minX = Mathf.RoundToInt(cx - bend - coneHalfW);
             int maxX = Mathf.RoundToInt(cx - bend + coneHalfW);
+
             for (int x = minX; x <= maxX; x++)
             {
-                if (x >= 1 && x < w - 1)
-                    tex.SetPixel(x, y, x == minX ? robeDark : robeMid);
+                if (x < 2 || x >= w - 2) continue;
+                if (x == minX || x == maxX || y == 75 + bobY)
+                    tex.SetPixel(x, y, outline);
+                else if (x < minX + 2)
+                    tex.SetPixel(x, y, cloakHighlight);
+                else if ((y - bobY) % 5 == 0)
+                    tex.SetPixel(x, y, hatDark); // Pliegues del sombrero
+                else
+                    tex.SetPixel(x, y, hatMid);
             }
         }
 
-        // 4. Báculo nudoso con cristal de energía morada a la derecha
-        int staffX = cx + 10;
-        for (int y = 8 + bobY; y <= 38 + bobY; y++)
+        // 7. Mano izquierda canalizando magia oscura (cuando ataca o flota)
+        int leftHandX = isCasting ? (cx - 13) : (cx - 10);
+        int leftHandY = isCasting ? (39 + bobY) : (33 + bobY);
+        // Manga izquierda
+        for (int i = 0; i <= 6; i++)
         {
-            tex.SetPixel(staffX, y, staffWood);
-            tex.SetPixel(staffX + 1, y, robeDark);
+            int sx = Mathf.RoundToInt(Mathf.Lerp(cx - 6, leftHandX, i / 6f));
+            int sy = Mathf.RoundToInt(Mathf.Lerp(42 + bobY, leftHandY, i / 6f));
+            tex.SetPixel(sx, sy, cloakMid);
+            tex.SetPixel(sx, sy - 1, cloakShadow);
+            tex.SetPixel(sx, sy + 1, outline);
         }
-        // Mano sosteniendo el báculo
-        tex.SetPixel(staffX - 1, 26 + bobY, skinWitch);
-        tex.SetPixel(staffX, 26 + bobY, skinWitch);
+        // Mano izquierda pálida
+        for (int dy = -1; dy <= 1; dy++)
+            for (int dx = -1; dx <= 1; dx++)
+                tex.SetPixel(leftHandX + dx, leftHandY + dy, skinHighlight);
 
-        // Orbe de cristal morado brillante en la punta del báculo
-        int orbY = 40 + bobY;
-        for (int dy = -3; dy <= 3; dy++)
+        if (isCasting)
         {
-            for (int dx = -3; dx <= 3; dx++)
+            // Fuego arcano violeta en la mano izquierda al atacar
+            for (int dy = -3; dy <= 4; dy++)
             {
+                for (int dx = -3; dx <= 3; dx++)
+                {
+                    float d = Mathf.Sqrt(dx * dx + dy * dy);
+                    if (d <= 1.5f) tex.SetPixel(leftHandX + dx, leftHandY + 3 + dy, orbCore);
+                    else if (d <= 3.2f) tex.SetPixel(leftHandX + dx, leftHandY + 3 + dy, orbMid);
+                }
+            }
+        }
+
+        // 8. Báculo nudoso de madera antigua en la mano derecha con Orbe de Cristal Morado
+        int staffBaseX = isCasting ? (cx + 15) : (cx + 13);
+        int staffTopY = isCasting ? (56 + bobY) : (52 + bobY);
+        int staffBotY = 10 + bobY;
+
+        for (int y = staffBotY; y <= staffTopY; y++)
+        {
+            int crookCurve = 0;
+            if (y >= staffTopY - 6)
+            {
+                float ct = (y - (staffTopY - 6f)) / 6f;
+                crookCurve = Mathf.RoundToInt(Mathf.Sin(ct * Mathf.PI) * 2.2f);
+            }
+            int sx = staffBaseX + crookCurve + Mathf.RoundToInt(Mathf.Sin(y * 0.25f) * 0.6f);
+            tex.SetPixel(sx - 1, y, woodLight);
+            tex.SetPixel(sx, y, woodMid);
+            tex.SetPixel(sx + 1, y, woodDark);
+        }
+
+        // Manga y mano derecha sujetando el báculo
+        int rightHandY = isCasting ? (38 + bobY) : (34 + bobY);
+        for (int i = 0; i <= 6; i++)
+        {
+            int sx = Mathf.RoundToInt(Mathf.Lerp(cx + 6, staffBaseX, i / 6f));
+            int sy = Mathf.RoundToInt(Mathf.Lerp(42 + bobY, rightHandY, i / 6f));
+            tex.SetPixel(sx, sy, cloakMid);
+            tex.SetPixel(sx, sy - 1, cloakShadow);
+        }
+        tex.SetPixel(staffBaseX - 1, rightHandY, skinHighlight);
+        tex.SetPixel(staffBaseX, rightHandY, skinMid);
+        tex.SetPixel(staffBaseX - 1, rightHandY + 1, skinHighlight);
+
+        // Orbe de cristal morado pulsante en la punta del báculo + partículas rúnicas
+        int orbX = staffBaseX + 1;
+        int orbY = staffTopY + 3;
+        float orbRadius = (isCasting ? 4.8f : 3.6f) + (subFrame % 2) * 0.5f;
+
+        for (int dy = -6; dy <= 6; dy++)
+        {
+            for (int dx = -6; dx <= 6; dx++)
+            {
+                int px = orbX + dx;
+                int py = orbY + dy;
+                if (px < 0 || px >= w || py < 0 || py >= h) continue;
+
                 float d = Mathf.Sqrt(dx * dx + dy * dy);
-                if (d <= 1.4f)
-                    tex.SetPixel(staffX + dx, orbY + dy, crystalCore);
-                else if (d <= 3.0f + (frame % 2) * 0.4f)
-                    tex.SetPixel(staffX + dx, orbY + dy, crystalOuter);
+                if (d <= 1.7f)
+                    tex.SetPixel(px, py, orbCore);
+                else if (d <= orbRadius * 0.72f)
+                    tex.SetPixel(px, py, orbMid);
+                else if (d <= orbRadius)
+                    tex.SetPixel(px, py, orbGlowOuter);
+            }
+        }
+
+        // Partículas rúnicas flotando alrededor del báculo y hombros
+        for (int m = 0; m < 4; m++)
+        {
+            float mAngle = phase + m * (Mathf.PI * 0.5f);
+            int mx = orbX + Mathf.RoundToInt(Mathf.Cos(mAngle) * 5.2f);
+            int my = orbY + Mathf.RoundToInt(Mathf.Sin(mAngle) * 5.2f);
+            if (mx >= 1 && mx < w - 1 && my >= 1 && my < h - 1)
+            {
+                tex.SetPixel(mx, my, orbCore);
             }
         }
 
         tex.Apply();
-        return Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.5f, 0.08f), 32f);
+        return Sprite.Create(tex, new Rect(0, 0, w, h), new Vector2(0.46f, 0.06f), 40f);
     }
 
     private static Sprite GetOrCreateSoftGlowSprite()

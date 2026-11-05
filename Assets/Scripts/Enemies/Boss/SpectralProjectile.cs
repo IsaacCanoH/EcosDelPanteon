@@ -44,7 +44,7 @@ public class SpectralProjectile : MonoBehaviour
 
         if (projectileSprite != null) sr.sprite = projectileSprite;
         sr.sortingLayerName = "Layer 1";
-        sr.sortingOrder = 780;
+        sr.sortingOrder = 4;
 
         // Añadir luz puntual al proyectil
         orbLight = GetComponent<UnityEngine.Rendering.Universal.Light2D>();
@@ -142,6 +142,16 @@ public class SpectralProjectile : MonoBehaviour
         if (hitSomething) return;
 
         transform.position += (Vector3)(moveDirection * (speed * Time.deltaTime));
+
+        // Verificación directa contra la hitbox de cuerpo completo del Player (cabeza, torso y pies)
+        PlayerHealth activePlayer = PlayerHealth.ActiveInstance;
+        if (activePlayer != null && !activePlayer.IsDead && activePlayer.IsProjectileTouchingBody(transform.position, 0.24f))
+        {
+            hitSomething = true;
+            activePlayer.TakeDamage(damage);
+            StartCoroutine(HitImpactRoutine());
+            return;
+        }
 
         // Pulso suave de escala
         float pulse = 1f + Mathf.Sin((Time.time - spawnTime) * 12f) * 0.12f;

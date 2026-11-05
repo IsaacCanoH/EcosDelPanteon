@@ -391,15 +391,7 @@ public class Level2VictoryManager : MonoBehaviour
         }
 
         // 4. Asegurar que Acceso Oeste esté completamente activo, visible y abierto
-        GameObject accesoOeste = GameObject.Find("Acceso oeste");
-        if (accesoOeste != null)
-        {
-            accesoOeste.SetActive(true);
-            foreach (Transform child in accesoOeste.transform)
-            {
-                if (child != null) child.gameObject.SetActive(true);
-            }
-        }
+        Level2SceneRuntimeSetup.RestoreAndOpenWestEntranceGate();
     }
 
     private void ClearPropsInFrontOfEastGate()
@@ -734,6 +726,10 @@ public class Level2VictoryManager : MonoBehaviour
 
         // 3. Tomar referencias de pilares, arbustos, material y tinte nocturno de "Acceso oeste"
         GameObject accesoOeste = GameObject.Find("Acceso oeste");
+        if (accesoOeste == null)
+        {
+            accesoOeste = Level2SceneRuntimeSetup.RestoreAndOpenWestEntranceGate();
+        }
         Transform westPillarTemplate = null;
         Transform westBushTemplate = null;
         Material propsMat = null;
@@ -1214,7 +1210,9 @@ public class Level2VictoryManager : MonoBehaviour
         if (victoryTitleText != null) victoryTitleText.text = "VICTORIA";
         if (victoryBodyText != null)
         {
-            victoryBodyText.text = "Recuperaste los tres juguetes.\nEl panteón vuelve a estar en calma.";
+            victoryBodyText.text = IsLevel3Scene()
+                ? "Recuperaste la Poción Morada, el Muñeco Vudú y la Vela.\nEl panteón vuelve a estar en calma."
+                : "Recuperaste los tres juguetes.\nEl panteón vuelve a estar en calma.";
         }
 
         if (victoryHintText != null)

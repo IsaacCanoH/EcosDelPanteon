@@ -44,7 +44,9 @@ public class ToyEncounterZone : MonoBehaviour
     private bool isPlayerSearching = false;
     private Transform playerTransform;
     private Rigidbody2D playerBody;
+    private ToyCollector toyCollector;
     private Level2HUD hud;
+    private float nextLockedAltarHintTime = 0f;
 
     [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.BeforeSceneLoad)]
     private static void ResetStaticState()
@@ -84,6 +86,7 @@ public class ToyEncounterZone : MonoBehaviour
 
         if (targetToy != null)
         {
+            targetToy.ApplyLevel3VisualsIfNeeded();
             targetToy.gameObject.SetActive(false);
         }
 
@@ -115,11 +118,21 @@ public class ToyEncounterZone : MonoBehaviour
         }
     }
 
+    private bool ArePreviousAltarObjectsCollected()
+    {
+        if (encounterIndex <= 0) return true;
+        if (toyCollector == null)
+        {
+            if (playerTransform != null) toyCollector = playerTransform.GetComponent<ToyCollector>();
+            if (toyCollector == null) toyCollector = FindObjectOfType<ToyCollector>();
+        }
+        if (toyCollector == null) return true;
+        return toyCollector.Count >= encounterIndex;
+    }
+
     private void Update()
     {
         if (triggered || IsAnyEncounterActive) return;
-
-        if (encounterIndex != GlobalEncountersCompleted) return;
 
         if (playerTransform == null)
         {
@@ -128,6 +141,25 @@ public class ToyEncounterZone : MonoBehaviour
             {
                 playerTransform = p.transform;
                 playerBody = p.GetComponent<Rigidbody2D>();
+                toyCollector = p.GetComponent<ToyCollector>();
+            }
+            return;
+        }
+
+        // Bloquear inicio de combates en otros altares hasta que el objeto del altar anterior haya sido recogido
+        if (encounterIndex != GlobalEncountersCompleted || !ArePreviousAltarObjectsCollected())
+        {
+            if (encounterIndex > 0 && !ArePreviousAltarObjectsCollected())
+            {
+                float dLock = Vector2.Distance(transform.position, playerTransform.position);
+                if (dLock <= 2.4f && Time.time >= nextLockedAltarHintTime)
+                {
+                    nextLockedAltarHintTime = Time.time + 3.5f;
+                    if (hud != null)
+                    {
+                        hud.ShowNotification("ALTAR BLOQUEADO", "Primero recoge el objeto revelado en el altar anterior.", 2.4f);
+                    }
+                }
             }
             return;
         }
@@ -179,7 +211,7 @@ public class ToyEncounterZone : MonoBehaviour
     private void OnTriggerEnter2D(Collider2D other)
     {
         if (triggered || IsAnyEncounterActive) return;
-        if (encounterIndex != GlobalEncountersCompleted) return;
+        if (encounterIndex != GlobalEncountersCompleted || !ArePreviousAltarObjectsCollected()) return;
         if (other.CompareTag("Player") || other.GetComponent<Cainos.PixelArtTopDown_Basic.TopDownCharacterController>() != null)
         {
             if (ToySearchUI.Instance != null)
@@ -192,6 +224,7 @@ public class ToyEncounterZone : MonoBehaviour
     public void StartEncounterSequence()
     {
         if (triggered || IsAnyEncounterActive) return;
+        if (encounterIndex != GlobalEncountersCompleted || !ArePreviousAltarObjectsCollected()) return;
         triggered = true;
         IsAnyEncounterActive = true;
 
@@ -221,18 +254,19 @@ public class ToyEncounterZone : MonoBehaviour
         if (step == 0)
         {
             dropBigKnifeOnClear = !isLvl3;
+            // En Nivel 3: más cantidad de enemigos, alternando fuertes (chubby), arqueros y base, con más duendes fuertes que arqueros y base
             waveManager.waves = isLvl3
                 ? new EncounterWaveManager.WaveDefinition[]
                 {
-                    new EncounterWaveManager.WaveDefinition { waveName = "Oleada 1", normalGoblins = 2, chubbyGoblins = 0, archerGoblins = 1 },
-                    new EncounterWaveManager.WaveDefinition { waveName = "Oleada 2", normalGoblins = 2, chubbyGoblins = 1, archerGoblins = 2 }
+                    new EncounterWaveManager.WaveDefinition { waveName = "Oleada 1", chubbyGoblins = 3, archerGoblins = 2, normalGoblins = 2 },
+                    new EncounterWaveManager.WaveDefinition { waveName = "Oleada 2", chubbyGoblins = 4, archerGoblins = 2, normalGoblins = 2 }
                 }
                 : new EncounterWaveManager.WaveDefinition[]
                 {
                     new EncounterWaveManager.WaveDefinition { waveName = "Oleada 1", normalGoblins = 3, chubbyGoblins = 0 },
                     new EncounterWaveManager.WaveDefinition { waveName = "Oleada 2", normalGoblins = 3, chubbyGoblins = 1 }
                 };
-            waveManager.maxSimultaneousEnemies = 4;
+            waveManager.maxSimultaneousEnemies = isLvl3 ? 5 : 4;
         }
         else if (step == 1)
         {
@@ -240,15 +274,15 @@ public class ToyEncounterZone : MonoBehaviour
             waveManager.waves = isLvl3
                 ? new EncounterWaveManager.WaveDefinition[]
                 {
-                    new EncounterWaveManager.WaveDefinition { waveName = "Oleada 1", normalGoblins = 3, chubbyGoblins = 1, archerGoblins = 2 },
-                    new EncounterWaveManager.WaveDefinition { waveName = "Oleada 2", normalGoblins = 3, chubbyGoblins = 2, archerGoblins = 3 }
+                    new EncounterWaveManager.WaveDefinition { waveName = "Oleada 1", chubbyGoblins = 4, archerGoblins = 3, normalGoblins = 2 },
+                    new EncounterWaveManager.WaveDefinition { waveName = "Oleada 2", chubbyGoblins = 5, archerGoblins = 3, normalGoblins = 3 }
                 }
                 : new EncounterWaveManager.WaveDefinition[]
                 {
                     new EncounterWaveManager.WaveDefinition { waveName = "Oleada 1", normalGoblins = 3, chubbyGoblins = 2 },
                     new EncounterWaveManager.WaveDefinition { waveName = "Oleada 2", normalGoblins = 4, chubbyGoblins = 3 }
                 };
-            waveManager.maxSimultaneousEnemies = isLvl3 ? 5 : 4;
+            waveManager.maxSimultaneousEnemies = isLvl3 ? 6 : 4;
         }
         else if (step == 2)
         {
@@ -256,8 +290,8 @@ public class ToyEncounterZone : MonoBehaviour
             waveManager.waves = isLvl3
                 ? new EncounterWaveManager.WaveDefinition[]
                 {
-                    new EncounterWaveManager.WaveDefinition { waveName = "Vanguardia de la Bruja", normalGoblins = 5, chubbyGoblins = 3, archerGoblins = 4 },
-                    new EncounterWaveManager.WaveDefinition { waveName = "Aquelarre del Panteón", normalGoblins = 6, chubbyGoblins = 4, archerGoblins = 4 }
+                    new EncounterWaveManager.WaveDefinition { waveName = "Vanguardia de la Bruja", chubbyGoblins = 6, archerGoblins = 4, normalGoblins = 4 },
+                    new EncounterWaveManager.WaveDefinition { waveName = "Aquelarre del Panteón", chubbyGoblins = 7, archerGoblins = 5, normalGoblins = 4 }
                 }
                 : new EncounterWaveManager.WaveDefinition[]
                 {
@@ -277,25 +311,19 @@ public class ToyEncounterZone : MonoBehaviour
 
         if (encounterIndex == 0)
         {
-            var seq = GetComponent<LloronaCinematicSequence>();
-            if (seq == null) seq = gameObject.AddComponent<LloronaCinematicSequence>();
-
-            bool cinematicDone = false;
-            Vector3 pos = targetToy != null ? targetToy.transform.position : transform.position;
-            seq.PlayEncounter1Cinematic(pos, () => { cinematicDone = true; });
-
-            while (!cinematicDone)
-            {
-                yield return null;
-            }
+            // Se eliminó la cinemática de La Llorona en el primer objeto; las oleadas inician directamente.
+            yield return new WaitForSeconds(0.25f);
         }
         else if (encounterIndex == 1)
         {
             if (ParchmentMessageUI.Instance != null)
             {
+                bool isLvl3 = IsLevel3Scene();
                 ParchmentMessageUI.Instance.Show(
                     "OLEADA 1 DE 2",
-                    "Los espíritus del panteón protegen el segundo juguete.\nExpulsa a los duendes con <link=\"key:F\"><color=#00000000> F </color></link> para purificar el altar.",
+                    isLvl3
+                        ? "Los guardianes del aquelarre protegen el Muñeco Vudú.\nExpulsa a los duendes con <link=\"key:F\"><color=#00000000> F </color></link> para purificar el altar."
+                        : "Los espíritus del panteón protegen el segundo juguete.\nExpulsa a los duendes con <link=\"key:F\"><color=#00000000> F </color></link> para purificar el altar.",
                     null,
                     null,
                     true
@@ -355,67 +383,53 @@ public class ToyEncounterZone : MonoBehaviour
 
     private IEnumerator RestoreToyRoutine()
     {
-        yield return new WaitForSeconds(0.5f);
+        yield return new WaitForSeconds(0.35f);
 
         Vector3 toyCenter = targetToy != null ? targetToy.transform.position : (transform.position + new Vector3(0f, 0.55f, 0f));
 
-        // 1. Reaparece el juguete purificado en el altar
+        // 1. Reaparece el juguete / objeto ritual purificado en el altar (listo para recogerse directamente)
         if (targetToy != null)
         {
+            targetToy.ApplyLevel3VisualsIfNeeded();
             targetToy.gameObject.SetActive(true);
         }
 
         bool isLvl3 = IsLevel3Scene();
 
-        // 2. En el Nivel 2: en el primer juguete aparece también el Cuchillo tirado al lado del juguete.
-        //    En el Nivel 3: ya se tiene el Cuchillo y Machete desde el inicio, así que solo se revela el juguete y un orbe de vida.
+        // 2. En el Nivel 2: en el primer altar aparece también el Cuchillo junto al juguete.
+        //    En el Nivel 3: ya se tiene el Cuchillo y Machete desde el inicio, así que se revela la Poción Morada y un orbe de vida.
         if (!isLvl3 && (dropBigKnifeOnClear || encounterIndex == 0))
         {
-            Vector3 knifeDropPos = toyCenter + new Vector3(0.82f, 0f, 0f);
+            Vector3 knifeDropPos = toyCenter + new Vector3(0.75f, 0f, 0f);
             WeaponPickup.SpawnWeaponDrop(WeaponType.BigKnife, knifeDropPos);
-
-            if (ParchmentMessageUI.Instance != null)
-            {
-                ParchmentMessageUI.Instance.Show(
-                    "CUCHILLO Y JUGUETE REVELADOS",
-                    "Has derrotado a los soldados de La Llorona.\nRecoge el primer juguete y el Cuchillo junto a él en el altar.\nPulsa 1: Farol (17 DMG) o 2: Cuchillo (28 DMG).",
-                    null,
-                    null,
-                    true
-                );
-            }
         }
         else if (isLvl3 && encounterIndex == 0)
         {
-            HealthPickup.SpawnDrop(toyCenter + new Vector3(0.82f, 0f, 0f), HealthPickup.HealMode.OneHeart);
-
-            if (ParchmentMessageUI.Instance != null)
+            HealthPickup.SpawnDrop(toyCenter + new Vector3(0.75f, 0f, 0f), HealthPickup.HealMode.OneHeart);
+            if (RunePillarLanternUpgrade.Instance != null)
             {
-                ParchmentMessageUI.Instance.Show(
-                    "PRIMER JUGUETE REVELADO",
-                    "Has derrotado a los soldados del panteón.\nRecoge el primer juguete en el altar.\nRecuerda alternar con 1: Farol, 2: Cuchillo y 3: Machete.",
-                    null,
-                    null,
-                    true
-                );
+                RunePillarLanternUpgrade.Instance.ActivatePillar();
             }
         }
-        else
+
+        if (hud != null)
         {
-            if (ParchmentMessageUI.Instance != null)
-            {
-                ParchmentMessageUI.Instance.Show(
-                    "ALTAR PURIFICADO",
-                    "Las sombras del panteón retroceden.\nYa puedes recoger el segundo juguete en el altar.",
-                    null,
-                    null,
-                    true
-                );
-            }
+            string itemName = ToyPickup.GetItemDisplayName(encounterIndex, isLvl3);
+            hud.ShowNotification("ALTAR PURIFICADO", $"Recoge {itemName} en el altar para habilitar el siguiente encuentro.", 3.0f);
         }
 
-        GlobalEncountersCompleted++;
         IsAnyEncounterActive = false;
+
+        // 3. Esperar a que el jugador recoja físicamente el objeto del altar antes de desbloquear el siguiente altar
+        while (targetToy != null && targetToy.gameObject != null && targetToy.gameObject.activeInHierarchy)
+        {
+            if (toyCollector == null) toyCollector = FindObjectOfType<ToyCollector>();
+            if (toyCollector != null && toyCollector.Count > encounterIndex)
+                break;
+            yield return null;
+        }
+
+        GlobalEncountersCompleted = Mathf.Max(GlobalEncountersCompleted, encounterIndex + 1);
         OnEncounterCleared?.Invoke();
     }
 
@@ -482,8 +496,9 @@ public class ToyEncounterZone : MonoBehaviour
         EnemyHealth bossHealth = bossInstance.GetComponent<EnemyHealth>();
         if (bossHealth == null) bossHealth = bossInstance.AddComponent<EnemyHealth>();
         bossHealth.variant = EnemyHealth.EnemyVariant.SpectralChildBoss;
-        bossHealth.maxHealth = 250;
-        bossHealth.currentHealth = 250;
+        int bossMaxHp = isLvl3 ? 1250 : 250;
+        bossHealth.maxHealth = bossMaxHp;
+        bossHealth.currentHealth = bossMaxHp;
 
         SpectralChildBossAI bossAI = bossInstance.GetComponent<SpectralChildBossAI>();
         if (bossAI == null) bossAI = bossInstance.AddComponent<SpectralChildBossAI>();
@@ -512,7 +527,7 @@ public class ToyEncounterZone : MonoBehaviour
             forceField.DeactivateBarrier();
         }
 
-        // Pausar movimiento del jugador para observar la cinemática donde el Niño Espectral desaparece lentamente
+        // Pausar movimiento del jugador para observar la cinemática donde el Jefe desaparece lentamente
         Cainos.PixelArtTopDown_Basic.TopDownCharacterController playerController = null;
         Animator playerAnim = null;
         if (playerTransform != null)
@@ -547,11 +562,12 @@ public class ToyEncounterZone : MonoBehaviour
         // Restaurar el control del jugador
         if (playerController != null) playerController.enabled = true;
 
-        // Aparecer el último juguete en el altar y el Orbe de Vida Completa (y el Machete en Nivel 2)
+        // Aparecer el último objeto ritual / juguete en el altar y el Orbe de Vida Completa (y el Machete en Nivel 2)
         bool isLvl3 = IsLevel3Scene();
         Vector3 toyCenter = targetToy != null ? targetToy.transform.position : (transform.position + new Vector3(0f, 0.55f, 0f));
         if (targetToy != null)
         {
+            targetToy.ApplyLevel3VisualsIfNeeded();
             targetToy.gameObject.SetActive(true);
         }
 
@@ -571,7 +587,7 @@ public class ToyEncounterZone : MonoBehaviour
             ParchmentMessageUI.Instance.Show(
                 isLvl3 ? "¡LA BRUJA DERROTADA!" : "¡NIÑO ESPECTRAL DERROTADO!",
                 isLvl3
-                    ? "La Bruja del Panteón se ha desvanecido.\nRecoge el último juguete en el altar para abrir la puerta superior y escapar del panteón."
+                    ? "La Bruja del Panteón se ha desvanecido.\nRecoge la Vela Ritual en el altar para abrir la puerta superior y escapar del panteón."
                     : "El espíritu del Niño Espectral se ha desvanecido.\nRecoge el último juguete y el Machete (50 DMG) en el altar para abrir la puerta derecha y escapar del panteón.",
                 null,
                 null,

@@ -23,6 +23,381 @@ public class LloronaCinematicSequence : MonoBehaviour
         StartCoroutine(SequenceRoutine(spawnCenter, onComplete));
     }
 
+    public void PlayLevel3GreenAuraIntroCinematic(Vector3 playerPos, Action onComplete)
+    {
+        StartCoroutine(Level3GreenAuraIntroRoutine(playerPos, onComplete));
+    }
+
+    private IEnumerator Level3GreenAuraIntroRoutine(Vector3 playerPos, Action onComplete)
+    {
+        EnsureAnimatedFrames();
+
+        // 1. Pausar control del jugador durante la cinemática inicial
+        GameObject player = GameObject.FindGameObjectWithTag("Player");
+        Cainos.PixelArtTopDown_Basic.TopDownCharacterController playerController = null;
+        Cainos.PixelArtTopDown_Basic.Level2CharacterController l2Controller = null;
+        Rigidbody2D playerRb = null;
+        Animator playerAnim = null;
+
+        if (player != null)
+        {
+            playerController = player.GetComponent<Cainos.PixelArtTopDown_Basic.TopDownCharacterController>();
+            l2Controller = player.GetComponent<Cainos.PixelArtTopDown_Basic.Level2CharacterController>();
+            playerRb = player.GetComponent<Rigidbody2D>();
+            playerAnim = player.GetComponent<Animator>();
+
+            if (playerController != null) playerController.enabled = false;
+            if (l2Controller != null) l2Controller.enabled = false;
+            if (playerRb != null) playerRb.velocity = Vector2.zero;
+            if (playerAnim != null)
+            {
+                playerAnim.SetBool("IsMoving", false);
+                playerAnim.SetInteger("Direction", 2); // Mirando hacia la derecha donde aparece La Llorona
+            }
+        }
+
+        // 2. Instanciar a La Llorona frente al jugador en la entrada izquierda
+        Vector3 basePos = playerPos + new Vector3(2.85f, 0.25f, 0f);
+        GameObject ghostRoot = new GameObject("LaLlorona_Level3Intro");
+        ghostRoot.transform.position = basePos + new Vector3(0f, 0.65f, 0f);
+
+        GameObject auraObj = new GameObject("SpectralAura");
+        auraObj.transform.SetParent(ghostRoot.transform, false);
+        auraObj.transform.localPosition = new Vector3(0f, 0.9f, 0f);
+        SpriteRenderer auraSr = auraObj.AddComponent<SpriteRenderer>();
+        auraSr.sprite = GetOrCreateSoftAuraSprite();
+        auraSr.sortingLayerName = "Layer 2";
+        auraSr.sortingOrder = 18;
+        auraSr.color = new Color(0.25f, 0.85f, 1f, 0f);
+        auraObj.transform.localScale = new Vector3(2.4f, 3.0f, 1f);
+
+        GameObject echoObj = new GameObject("SpectralEcho");
+        echoObj.transform.SetParent(ghostRoot.transform, false);
+        echoObj.transform.localPosition = Vector3.zero;
+        SpriteRenderer echoSr = echoObj.AddComponent<SpriteRenderer>();
+        echoSr.sprite = animatedLloronaFrames[0];
+        echoSr.sortingLayerName = "Layer 2";
+        echoSr.sortingOrder = 19;
+        echoSr.color = new Color(0.35f, 0.9f, 1f, 0f);
+        echoObj.transform.localScale = new Vector3(1.12f, 1.12f, 1f);
+
+        GameObject bodyObj = new GameObject("SpectralBody");
+        bodyObj.transform.SetParent(ghostRoot.transform, false);
+        bodyObj.transform.localPosition = Vector3.zero;
+        SpriteRenderer sr = bodyObj.AddComponent<SpriteRenderer>();
+        sr.sprite = animatedLloronaFrames[0];
+        sr.sortingLayerName = "Layer 2";
+        sr.sortingOrder = 20;
+        sr.color = new Color(spectralColor.r, spectralColor.g, spectralColor.b, 0f);
+
+        List<Transform> mistParticles = new List<Transform>();
+        List<SpriteRenderer> mistRenderers = new List<SpriteRenderer>();
+        for (int i = 0; i < 6; i++)
+        {
+            GameObject mist = new GameObject($"LloronaMist_{i}");
+            mist.transform.SetParent(ghostRoot.transform, false);
+            mist.transform.localPosition = new Vector3((i - 2.5f) * 0.28f, 0.2f + (i % 3) * 0.35f, 0f);
+            mist.transform.localScale = Vector3.one * (0.45f + (i % 2) * 0.2f);
+            SpriteRenderer msr = mist.AddComponent<SpriteRenderer>();
+            msr.sprite = GetOrCreateSoftAuraSprite();
+            msr.sortingLayerName = "Layer 2";
+            msr.sortingOrder = 21;
+            msr.color = new Color(0.6f, 0.95f, 1f, 0f);
+            mistParticles.Add(mist.transform);
+            mistRenderers.Add(msr);
+        }
+
+        if (wailClip == null)
+        {
+#if UNITY_EDITOR
+            wailClip = UnityEditor.AssetDatabase.LoadAssetAtPath<AudioClip>("Assets/Audio/GhostChild/ghost_overcharge.wav");
+#endif
+        }
+        if (audioSource == null) audioSource = GetComponent<AudioSource>();
+        if (audioSource == null) audioSource = gameObject.AddComponent<AudioSource>();
+        if (wailClip != null)
+        {
+            audioSource.PlayOneShot(wailClip, 0.85f * AudioManager.EnemyVolume);
+        }
+
+        // 3. Aparición de La Llorona
+        float elapsed = 0f;
+        while (elapsed < appearDuration)
+        {
+            float dt = Time.unscaledDeltaTime > 0f ? Time.unscaledDeltaTime : 0.016f;
+            elapsed += dt;
+            float p = Mathf.Clamp01(elapsed / appearDuration);
+            float smoothP = Mathf.SmoothStep(0f, 1f, p);
+
+            UpdateGhostAnimation(ghostRoot.transform, sr, echoSr, auraSr, mistParticles, mistRenderers, basePos, smoothP, elapsed);
+            ghostRoot.transform.position += new Vector3(0f, Mathf.Lerp(0.65f, 0f, smoothP), 0f);
+            yield return null;
+        }
+
+        // 4. Diálogo 1 (avanza con P): La Llorona expresa su furia por la derrota del Espectro del Niño
+        bool firstDialogClosed = false;
+        if (ParchmentMessageUI.Instance != null)
+        {
+            ParchmentMessageUI.Instance.Show(
+                "LA LLORONA",
+                "«¡Estoy muy molesta contigo!\n¡Has derrotado a uno de mis sirvientes más fuertes, el Espectro del Niño!»",
+                null,
+                () => { firstDialogClosed = true; },
+                true
+            );
+        }
+        else
+        {
+            firstDialogClosed = true;
+        }
+
+        while (!firstDialogClosed)
+        {
+            float dt = Time.unscaledDeltaTime > 0f ? Time.unscaledDeltaTime : 0.016f;
+            elapsed += dt;
+            UpdateGhostAnimation(ghostRoot.transform, sr, echoSr, auraSr, mistParticles, mistRenderers, basePos, 1f, elapsed);
+            yield return null;
+        }
+
+        // 5. Después de presionar P: aparecen 3 duendes reales (Base, Fuerte y Arquero) que al terminar la cinemática se quedarán en el mapa para luchar
+        List<GameObject> demoGoblins = new List<GameObject>();
+        Vector3[] goblinOffsets = new Vector3[]
+        {
+            new Vector3(1.15f,  0.65f, 0f), // 0: Duende Base
+            new Vector3(1.85f, -0.25f, 0f), // 1: Duende Fuerte
+            new Vector3(1.15f, -1.05f, 0f)  // 2: Duende Arquero Blindado
+        };
+
+        GameObject goblinTemplate = null;
+        GoblinAI anySceneGoblin = FindObjectOfType<GoblinAI>(false);
+        if (anySceneGoblin != null)
+        {
+            goblinTemplate = anySceneGoblin.gameObject;
+        }
+#if UNITY_EDITOR
+        if (goblinTemplate == null)
+            goblinTemplate = UnityEditor.AssetDatabase.LoadAssetAtPath<GameObject>("Assets/Prefabs/Enemies/PF_Goblin.prefab");
+#endif
+        if (goblinTemplate == null)
+            goblinTemplate = Resources.Load<GameObject>("Prefabs/Enemies/PF_Goblin");
+
+        for (int i = 0; i < goblinOffsets.Length; i++)
+        {
+            Vector3 spawnPos = basePos + goblinOffsets[i];
+            GameObject realGoblin;
+            if (goblinTemplate != null)
+            {
+                realGoblin = Instantiate(goblinTemplate, spawnPos, Quaternion.identity);
+            }
+            else
+            {
+                realGoblin = new GameObject($"Goblin_Encantado_Intro_{i + 1}");
+                realGoblin.transform.position = spawnPos;
+                realGoblin.AddComponent<SpriteRenderer>();
+            }
+
+            realGoblin.name = $"Goblin_Encantado_Llorona_{i + 1}";
+            realGoblin.SetActive(true);
+
+            // Configurar inicialmente SIN aura verde para que el jugador vea cómo el hechizo de La Llorona se las activa
+            EnemyHealth eh = realGoblin.GetComponent<EnemyHealth>();
+            if (eh == null) eh = realGoblin.AddComponent<EnemyHealth>();
+
+            GoblinVariantConfig cfg = realGoblin.GetComponent<GoblinVariantConfig>();
+            if (cfg == null) cfg = realGoblin.AddComponent<GoblinVariantConfig>();
+
+            bool isChubby = (i == 1);
+            bool isArcher = (i == 2);
+            cfg.SetVariant(isChubby, isArcher, false);
+
+            // Pausar su IA durante la cinemática para que permanezcan frente a La Llorona hasta que termine
+            GoblinAI ai = realGoblin.GetComponent<GoblinAI>();
+            if (ai != null) ai.enabled = false;
+            GoblinArcherController archerCtrl = realGoblin.GetComponent<GoblinArcherController>();
+            if (archerCtrl != null) archerCtrl.enabled = false;
+            Rigidbody2D gRb = realGoblin.GetComponent<Rigidbody2D>();
+            if (gRb != null) gRb.velocity = Vector2.zero;
+
+            realGoblin.transform.localScale = Vector3.zero;
+            demoGoblins.Add(realGoblin);
+        }
+
+        // Animación de aparición de los 3 duendes (0.55s)
+        float spawnTimer = 0f;
+        while (spawnTimer < 0.55f)
+        {
+            float dt = Time.unscaledDeltaTime > 0f ? Time.unscaledDeltaTime : 0.016f;
+            spawnTimer += dt;
+            elapsed += dt;
+            float p = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(spawnTimer / 0.55f));
+
+            UpdateGhostAnimation(ghostRoot.transform, sr, echoSr, auraSr, mistParticles, mistRenderers, basePos, 1f, elapsed);
+            for (int i = 0; i < demoGoblins.Count; i++)
+            {
+                if (demoGoblins[i] == null) continue;
+                Vector3 targetScale = (i == 1) ? new Vector3(1.26f, 1.15f, 1f) : ((i == 2) ? new Vector3(1.10f, 1.10f, 1f) : Vector3.one);
+                demoGoblins[i].transform.localScale = targetScale * p;
+            }
+            yield return null;
+        }
+
+        // 6. La Llorona lanza un hechizo esmeralda hacia los duendes y les enciende el Aura Verde
+        if (wailClip != null && audioSource != null)
+        {
+            audioSource.PlayOneShot(wailClip, 0.9f * AudioManager.EnemyVolume);
+        }
+
+        List<GameObject> spellBolts = new List<GameObject>();
+        for (int i = 0; i < demoGoblins.Count; i++)
+        {
+            GameObject bolt = new GameObject($"SpellBolt_Green_{i}");
+            bolt.transform.position = basePos + new Vector3(0f, 0.85f, 0f);
+            bolt.transform.localScale = new Vector3(0.55f, 0.55f, 1f);
+            SpriteRenderer bSr = bolt.AddComponent<SpriteRenderer>();
+            bSr.sprite = GetOrCreateSoftAuraSprite();
+            bSr.sortingLayerName = "Layer 2";
+            bSr.sortingOrder = 25;
+            bSr.color = new Color(0.15f, 1.0f, 0.45f, 1f);
+            spellBolts.Add(bolt);
+        }
+
+        float spellTimer = 0f;
+        float spellDuration = 0.65f;
+        Vector3 spellOrigin = basePos + new Vector3(0f, 0.85f, 0f);
+        while (spellTimer < spellDuration)
+        {
+            float dt = Time.unscaledDeltaTime > 0f ? Time.unscaledDeltaTime : 0.016f;
+            spellTimer += dt;
+            elapsed += dt;
+            float p = Mathf.SmoothStep(0f, 1f, Mathf.Clamp01(spellTimer / spellDuration));
+
+            UpdateGhostAnimation(ghostRoot.transform, sr, echoSr, auraSr, mistParticles, mistRenderers, basePos, 1f, elapsed);
+            // El aura de La Llorona brilla en verde intenso mientras lanza el conjuro
+            if (auraSr != null)
+            {
+                auraSr.color = Color.Lerp(new Color(0.25f, 0.85f, 1f, 0.7f), new Color(0.15f, 1.0f, 0.45f, 0.95f), Mathf.Sin(p * Mathf.PI));
+            }
+
+            for (int i = 0; i < spellBolts.Count; i++)
+            {
+                if (demoGoblins[i] == null) continue;
+                Vector3 targetPos = demoGoblins[i].transform.position + new Vector3(0f, 0.35f, 0f);
+                Vector3 arcOffset = new Vector3(0f, Mathf.Sin(p * Mathf.PI) * 0.45f, 0f);
+                spellBolts[i].transform.position = Vector3.Lerp(spellOrigin, targetPos, p) + arcOffset;
+                float pulse = 0.55f + Mathf.Sin(p * Mathf.PI) * 0.45f;
+                spellBolts[i].transform.localScale = new Vector3(pulse, pulse, 1f);
+            }
+            yield return null;
+        }
+
+        foreach (var b in spellBolts)
+        {
+            if (b != null) Destroy(b);
+        }
+
+        // Encender el Aura Verde mejorada y aumentar la resistencia real de los 3 duendes encantados
+        for (int i = 0; i < demoGoblins.Count; i++)
+        {
+            if (demoGoblins[i] == null) continue;
+            GoblinVariantConfig cfg = demoGoblins[i].GetComponent<GoblinVariantConfig>();
+            if (cfg != null)
+            {
+                bool isChubby = (i == 1);
+                bool isArcher = (i == 2);
+                cfg.SetVariant(isChubby, isArcher, true);
+            }
+        }
+
+        // Pausa breve (0.55s) para que el jugador vea encenderse el aura verde antes del segundo diálogo
+        float postSpellWait = 0f;
+        while (postSpellWait < 0.55f)
+        {
+            float dt = Time.unscaledDeltaTime > 0f ? Time.unscaledDeltaTime : 0.016f;
+            postSpellWait += dt;
+            elapsed += dt;
+            UpdateGhostAnimation(ghostRoot.transform, sr, echoSr, auraSr, mistParticles, mistRenderers, basePos, 1f, elapsed);
+            yield return null;
+        }
+
+        // 7. Diálogo 2 (avanza con P): La Llorona anuncia que ahora sus mejores guerreros serán más fuertes que antes
+        bool secondDialogClosed = false;
+        if (ParchmentMessageUI.Instance != null)
+        {
+            ParchmentMessageUI.Instance.Show(
+                "LA LLORONA",
+                "«¡Con este hechizo maldito, ahora mis mejores guerreros serán más fuertes y resistentes que antes!»",
+                null,
+                () => { secondDialogClosed = true; },
+                true
+            );
+        }
+        else
+        {
+            secondDialogClosed = true;
+        }
+
+        while (!secondDialogClosed)
+        {
+            float dt = Time.unscaledDeltaTime > 0f ? Time.unscaledDeltaTime : 0.016f;
+            elapsed += dt;
+            UpdateGhostAnimation(ghostRoot.transform, sr, echoSr, auraSr, mistParticles, mistRenderers, basePos, 1f, elapsed);
+            yield return null;
+        }
+
+        // 8. Desvanecer únicamente a La Llorona; los 3 duendes encantados SE QUEDAN EN EL MAPA para luchar
+        float vanishElapsed = 0f;
+        while (vanishElapsed < vanishDuration)
+        {
+            float dt = Time.unscaledDeltaTime > 0f ? Time.unscaledDeltaTime : 0.016f;
+            vanishElapsed += dt;
+            elapsed += dt;
+            float p = Mathf.Clamp01(vanishElapsed / vanishDuration);
+            float alphaFactor = 1f - Mathf.SmoothStep(0f, 1f, p);
+
+            UpdateGhostAnimation(ghostRoot.transform, sr, echoSr, auraSr, mistParticles, mistRenderers, basePos, alphaFactor, elapsed);
+            ghostRoot.transform.position += new Vector3(0f, p * 0.85f, 0f);
+            yield return null;
+        }
+
+        Destroy(ghostRoot);
+
+        // Activar la IA de los 3 duendes encantados para que se queden luchando en el mapa
+        GoblinAwarenessUI awarenessUI = FindObjectOfType<GoblinAwarenessUI>();
+        for (int i = 0; i < demoGoblins.Count; i++)
+        {
+            GameObject gob = demoGoblins[i];
+            if (gob == null) continue;
+
+            GoblinArcherController archerCtrl = gob.GetComponent<GoblinArcherController>();
+            if (archerCtrl != null) archerCtrl.enabled = true;
+
+            GoblinAI ai = gob.GetComponent<GoblinAI>();
+            if (ai != null)
+            {
+                ai.waitForFirstCoin = false;
+                ai.enablePatrol = true;
+                ai.patrolRadius = 2.8f;
+                if (i == 2 && archerCtrl != null)
+                {
+                    ai.moveSpeed = 1.85f;
+                    ai.patrolSpeed = 1.15f;
+                    ai.secondCoinSpeed = 2.40f;
+                    ai.stopDistance = archerCtrl.idealRangedStopDistance;
+                    ai.attackRange = 0.25f;
+                    ai.enableLungeAttack = false;
+                }
+                ai.enabled = true;
+                if (awarenessUI != null) awarenessUI.Track(ai);
+            }
+        }
+
+        // 9. Restaurar control del jugador
+        if (playerController != null) playerController.enabled = true;
+        if (l2Controller != null) l2Controller.enabled = true;
+
+        onComplete?.Invoke();
+    }
+
     private IEnumerator SequenceRoutine(Vector3 spawnCenter, Action onComplete)
     {
         EnsureAnimatedFrames();
