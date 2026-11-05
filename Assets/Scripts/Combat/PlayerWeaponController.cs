@@ -114,7 +114,7 @@ public class PlayerWeaponController : MonoBehaviour
         lanternDamage = 17;
         bigKnifeDamage = 28;
         macheteDamage = 50;
-        lanternRange = 2.0f;
+        lanternRange = 2.4f;
         knifeRange = 0.88f;
         macheteRange = 1.15f;
         attackArcAngle = 105f;
@@ -180,6 +180,22 @@ public class PlayerWeaponController : MonoBehaviour
         handWeaponHolder.localScale = new Vector3(invX, invY, 1f);
     }
 
+    public void UpgradeLanternToRadial(int radialDmg = 38, float radialRng = 3.75f)
+    {
+        // Más daño que el Cuchillo (28 DMG) pero menos que el Machete (50 DMG) -> 38 DMG
+        lanternDamage = Mathf.Clamp(radialDmg, bigKnifeDamage + 6, macheteDamage - 6);
+        lanternRange = Mathf.Max(3.5f, radialRng);
+        if (lanternComponent == null) lanternComponent = GetComponent<PlayerLantern>();
+        if (lanternComponent != null && !lanternComponent.isRadialUpgraded)
+        {
+            lanternComponent.isRadialUpgraded = true;
+            lanternComponent.radialDamage = lanternDamage;
+            lanternComponent.radialRange = lanternRange;
+            lanternComponent.range = lanternRange;
+        }
+        UpdateFarolHUD();
+    }
+
     public void UpdateFarolHUD()
     {
         var farolHud = GameObject.Find("Farol_HUD");
@@ -205,11 +221,12 @@ public class PlayerWeaponController : MonoBehaviour
             macheteHudSprite = UnityEditor.AssetDatabase.LoadAssetAtPath<Sprite>("Assets/Sprites/Items/Weapons/TX_Machete.png");
 #endif
 
+        bool isRadial = lanternComponent != null && lanternComponent.isRadialUpgraded;
         switch (currentWeapon)
         {
             case WeaponType.Lantern:
-                if (nameText != null) nameText.text = "FAROL DE ANIMAS";
-                if (helpText != null) helpText.text = $"DESTELLO ({lanternDamage} DMG)";
+                if (nameText != null) nameText.text = isRadial ? "FAROL RUNICO" : "FAROL DE ANIMAS";
+                if (helpText != null) helpText.text = isRadial ? $"ONDA 360° ({lanternDamage} DMG)" : $"DESTELLO ({lanternDamage} DMG)";
                 if (iconImg != null && lanternHudSprite != null) { iconImg.sprite = lanternHudSprite; iconImg.preserveAspect = true; }
                 break;
             case WeaponType.BigKnife:
@@ -521,7 +538,7 @@ public class PlayerWeaponController : MonoBehaviour
                     continue;
 
                 enemyHealth.TakeDamage(damage, lastFacingDir);
-                if (goblinCombat != null) goblinCombat.TakeLanternHit();
+                if (goblinAI != null) goblinAI.Alert();
                 hitAny = true;
                 continue;
             }
@@ -640,7 +657,7 @@ public class PlayerWeaponController : MonoBehaviour
                     continue;
 
                 enemyHealth.TakeDamage(damage, lastFacingDir);
-                if (goblinCombat != null) goblinCombat.TakeLanternHit();
+                if (goblinAI != null) goblinAI.Alert();
                 hitAny = true;
                 continue;
             }

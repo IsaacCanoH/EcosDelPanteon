@@ -65,7 +65,7 @@ public class EnemyTeleportSpawn : MonoBehaviour
         SpriteRenderer glyphRenderer = glyph.AddComponent<SpriteRenderer>();
         glyphRenderer.sprite = GetOrCreateGlyphSprite();
         glyphRenderer.sortingLayerName = "Layer 1";
-        glyphRenderer.sortingOrder = 180;
+        glyphRenderer.sortingOrder = 1;
         glyph.transform.localScale = Vector3.zero;
 
         Color glyphColor = new Color(0.2f, 0.85f, 0.45f, 0.85f); // Resplandor espectral verde

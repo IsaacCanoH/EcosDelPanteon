@@ -8,12 +8,13 @@ public class EnemyHealth : MonoBehaviour, IDamageable
     {
         NormalGoblin = 0,       // 50 HP, 20 de daño
         ChubbyGoblin = 1,       // 80 HP, 40 de daño, suelta 1 orbe de vida (1 corazón) al morir
-        SpectralChildBoss = 2,  // 250 HP, 15 proyectil / 20 contacto
-        ArcherGoblin = 3        // 50 HP (igual que duende normal), arco/cuchillo, suelta 1 orbe de vida al morir
+        SpectralChildBoss = 2,  // 250 HP (450 HP en modo La Bruja), 15 proyectil / 20 contacto
+        ArcherGoblin = 3        // 110 HP (blindado con armadura de cuero y casco, más vida que duende grande), más rápido, suelta 1 orbe de vida al morir
     }
 
     [Header("Variante y Estadísticas")]
     public EnemyVariant variant = EnemyVariant.NormalGoblin;
+    public bool hasGreenAura = false;
     [Min(1)] public int maxHealth = 50;
     public int currentHealth;
     public float knockbackForce = 2.2f;
@@ -59,30 +60,37 @@ public class EnemyHealth : MonoBehaviour, IDamageable
         }
     }
 
-    public void ConfigureVariant(EnemyVariant newVariant)
+    public void ConfigureVariant(EnemyVariant newVariant, bool greenAura = false)
     {
         variant = newVariant;
+        hasGreenAura = greenAura;
         switch (variant)
         {
             case EnemyVariant.NormalGoblin:
-                maxHealth = 50;
-                knockbackForce = 2.4f;
+                // Duende base con aura verde: igual de resistente que un duende fuerte (80 HP vs 50 HP)
+                maxHealth = hasGreenAura ? 80 : 50;
+                knockbackForce = hasGreenAura ? 1.6f : 2.4f;
                 dropsHealthOrbOnDeath = false;
                 if (goblinAI != null)
                 {
                     goblinAI.attackDamage = 20;
                     goblinAI.moveSpeed = 1.35f;
+                    goblinAI.patrolSpeed = 0.65f;
+                    goblinAI.secondCoinSpeed = 2.0f;
                 }
                 break;
 
             case EnemyVariant.ChubbyGoblin:
-                maxHealth = 80;
-                knockbackForce = 1.1f; // Más pesado y resistente al empuje
+                // Duende fuerte con aura verde: igual de resistente que un arquero (110 HP vs 80 HP)
+                maxHealth = hasGreenAura ? 110 : 80;
+                knockbackForce = hasGreenAura ? 0.85f : 1.1f; // Más pesado y resistente al empuje
                 dropsHealthOrbOnDeath = true; // Los duendes grandes sueltan orbe de vida en niveles 2, 3 y 4
                 if (goblinAI != null)
                 {
                     goblinAI.attackDamage = 40;
                     goblinAI.moveSpeed = 0.95f;
+                    goblinAI.patrolSpeed = 0.55f;
+                    goblinAI.secondCoinSpeed = 1.45f;
                 }
                 break;
 
@@ -93,13 +101,16 @@ public class EnemyHealth : MonoBehaviour, IDamageable
                 break;
 
             case EnemyVariant.ArcherGoblin:
-                maxHealth = 50; // Misma vida que un duende normal
-                knockbackForce = 2.2f;
+                // Arquero con aura verde: más resistente que los otros arqueros (150 HP vs 110 HP)
+                maxHealth = hasGreenAura ? 150 : 110;
+                knockbackForce = hasGreenAura ? 1.0f : 1.35f;
                 dropsHealthOrbOnDeath = true; // El duende arquero también spawnea orbe de vida al morir
                 if (goblinAI != null)
                 {
                     goblinAI.attackDamage = 20;
-                    goblinAI.moveSpeed = 1.35f;
+                    goblinAI.moveSpeed = 1.85f;      // Más rápido al moverse que el duende base (1.35f)
+                    goblinAI.patrolSpeed = 1.15f;    // Más rápido patrullando que el duende base (0.65f)
+                    goblinAI.secondCoinSpeed = 2.40f;
                 }
                 break;
         }
@@ -109,9 +120,19 @@ public class EnemyHealth : MonoBehaviour, IDamageable
 
     private void ApplyVariantPresetIfDefault()
     {
-        if (variant == EnemyVariant.ChubbyGoblin)
+        if (variant == EnemyVariant.NormalGoblin)
         {
-            if (maxHealth == 50) maxHealth = 80;
+            if (hasGreenAura && maxHealth < 80) maxHealth = 80;
+        }
+        else if (variant == EnemyVariant.ChubbyGoblin)
+        {
+            int targetHp = hasGreenAura ? 110 : 80;
+            if (maxHealth < targetHp) maxHealth = targetHp;
+        }
+        else if (variant == EnemyVariant.ArcherGoblin)
+        {
+            int targetHp = hasGreenAura ? 150 : 110;
+            if (maxHealth < targetHp) maxHealth = targetHp;
         }
         else if (variant == EnemyVariant.SpectralChildBoss)
         {
@@ -189,6 +210,8 @@ public class EnemyHealth : MonoBehaviour, IDamageable
         if (legacyGoblinCombat != null) legacyGoblinCombat.enabled = false;
         var archerCtrl = GetComponent<GoblinArcherController>();
         if (archerCtrl != null) archerCtrl.enabled = false;
+        var greenAuraCtrl = GetComponent<GreenAuraVisualController>();
+        if (greenAuraCtrl != null) greenAuraCtrl.enabled = false;
 
         if (rb != null)
         {

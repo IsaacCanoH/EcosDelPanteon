@@ -51,6 +51,17 @@ public sealed class Level2HUD : MonoBehaviour
             weapons.OnWeaponChanged += HandleWeaponChanged;
         }
 
+        if (ToyPickup.IsLevel3Scene() && toyIcons != null)
+        {
+            for (int i = 0; i < Mathf.Min(3, toyIcons.Length); i++)
+            {
+                if (toyIcons[i] != null)
+                {
+                    toyIcons[i].sprite = ToyPickup.GetOrCreateLevel3ItemSprite(i);
+                }
+            }
+        }
+
         SetupSubHUDLayout();
     }
 
@@ -136,21 +147,12 @@ public sealed class Level2HUD : MonoBehaviour
                 weaponHelpText.text = "1: FAROL  |  2: PUÑOS  |  3: CUCHILLO";
         }
 
-        // 5. Progreso de Juguetes
+        // 5. Progreso de Juguetes / Objetos Rituales
         if (toys != null && lastCount != toys.Count && !IntroSequencePlaying)
         {
             lastCount = toys.Count;
             if (objective != null)
                 objective.text = $"{lastCount}/{ToyCollector.RequiredToys}";
-
-            string cardTitle = lastCount == 0 ? "OBJETIVO" : $"JUGUETE {lastCount} DE 3";
-            string cardMsg = lastCount == 0
-                ? "Recupera los 3 juguetes perdidos del panteón.\nAcércate a cada juguete para purificarlo y resistir las oleadas.\n\n<mark=#C8A05266><color=#493419> ESPACIO </color></mark> Lanzar piedra (6/6)\n<mark=#C8A05266><color=#493419> CLIC IZQ / J </color></mark> Atacar\n<mark=#C8A05266><color=#493419> 1: Farol · 2: Puños · 3: Cuchillo </color></mark> Cambiar arma"
-                : lastCount == 1
-                    ? "¡Has purificado el primer juguete!\nEl Cuchillo Grande (18 DMG) ha sido desbloqueado.\nBusca el segundo juguete."
-                    : lastCount == 2
-                        ? "Queda un último juguete.\nPrepárate para el encuentro final en el cementerio."
-                        : "¡Tienes los 3 juguetes!\nDirígete a la puerta lateral oeste para escapar.";
 
             // Las notificaciones y pistas narrativas son gestionadas por Level2ClueSystem y ToyEncounterZone
             if (toyIcons != null)

@@ -9,6 +9,7 @@ public class GoblinCombat : MonoBehaviour
     public bool IsBanished { get; private set; }
     private GoblinWaveDirector director;
     private GoblinAI ai;
+    private EnemyHealth enemyHealth;
     private SpriteRenderer visual;
     private Color originalColor;
     private float flashUntil;
@@ -17,23 +18,49 @@ public class GoblinCombat : MonoBehaviour
     {
         CurrentHealth = maxHealth;
         ai = GetComponent<GoblinAI>();
+        enemyHealth = GetComponent<EnemyHealth>();
         visual = GetComponent<SpriteRenderer>();
         if (visual != null) originalColor = visual.color;
         director = FindObjectOfType<GoblinWaveDirector>();
+
+        // En Nivel 2 y Nivel 3 los duendes usan EnemyHealth (barra de vida real: 50, 80, 110, 150 HP).
+        // Desactivar la lógica de muerte en 3 golpes del Nivel 1 para que nunca mueran prematuramente.
+        if (enemyHealth != null)
+        {
+            enabled = false;
+        }
     }
 
     private void Start()
     {
+        if (enemyHealth != null)
+        {
+            enabled = false;
+            return;
+        }
         if (director != null) director.Register(this);
     }
 
     public bool TakeLanternHit()
     {
+        if (enemyHealth == null) enemyHealth = GetComponent<EnemyHealth>();
+        if (enemyHealth != null)
+        {
+            if (ai != null) ai.Alert();
+            return false;
+        }
         return TakeDamage(10);
     }
 
     public bool TakeDamage(int damage, Vector2 knockbackDir = default)
     {
+        if (enemyHealth == null) enemyHealth = GetComponent<EnemyHealth>();
+        if (enemyHealth != null)
+        {
+            if (ai != null) ai.Alert();
+            return false;
+        }
+
         if (IsBanished || !isActiveAndEnabled || (ai != null && !ai.isActiveAndEnabled)) return false;
         int hits = damage >= 25 ? 3 : (damage >= 15 ? 2 : 1);
         CurrentHealth = Mathf.Max(0, CurrentHealth - hits);
@@ -45,7 +72,7 @@ public class GoblinCombat : MonoBehaviour
 
     private void LateUpdate()
     {
-        if (visual == null || IsBanished) return;
+        if (enemyHealth != null || visual == null || IsBanished) return;
         visual.color = Time.time < flashUntil
             ? new Color(1f, 0.8f, 0.35f, originalColor.a)
             : (ai.IsWindingUp ? new Color(1f, 0.38f, 0.25f, originalColor.a) : originalColor);
@@ -53,6 +80,8 @@ public class GoblinCombat : MonoBehaviour
 
     private void Banish()
     {
+        if (enemyHealth != null) return;
+
         IsBanished = true;
         ai.enabled = false;
         var body = GetComponent<Rigidbody2D>();

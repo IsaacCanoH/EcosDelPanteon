@@ -26,6 +26,7 @@ public class PlayerHUD : MonoBehaviour
     private int ultimaMetaMonedas = -1;
     private int ultimoToyMask = -1;
     private bool initializedToys = false;
+    private bool initializedForLevel3 = false;
 
     private void Start()
     {
@@ -64,9 +65,21 @@ public class PlayerHUD : MonoBehaviour
     public void CheckInitToys()
     {
         if (!IsToyMode()) return;
-        if (initializedToys && spritesJuguetes != null && spritesJuguetes.Length >= 3 && spritesJuguetes[0] != null) return;
 
-        if (spritesJuguetes == null || spritesJuguetes.Length < 3 || spritesJuguetes[0] == null)
+        bool isLvl3 = ToyPickup.IsLevel3Scene();
+        if (initializedToys && initializedForLevel3 == isLvl3 && spritesJuguetes != null && spritesJuguetes.Length >= 3 && spritesJuguetes[0] != null)
+            return;
+
+        if (isLvl3)
+        {
+            spritesJuguetes = new Sprite[3]
+            {
+                ToyPickup.GetOrCreateLevel3ItemSprite(0), // Poción Morada
+                ToyPickup.GetOrCreateLevel3ItemSprite(1), // Muñeco Vudú
+                ToyPickup.GetOrCreateLevel3ItemSprite(2)  // Vela Ritual
+            };
+        }
+        else if (spritesJuguetes == null || spritesJuguetes.Length < 3 || spritesJuguetes[0] == null || initializedForLevel3)
         {
 #if UNITY_EDITOR
             spritesJuguetes = new Sprite[3]
@@ -94,6 +107,7 @@ public class PlayerHUD : MonoBehaviour
                 }
             }
             initializedToys = true;
+            initializedForLevel3 = isLvl3;
         }
     }
 

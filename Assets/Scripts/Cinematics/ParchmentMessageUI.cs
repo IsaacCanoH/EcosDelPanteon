@@ -76,6 +76,8 @@ public class ParchmentMessageUI : MonoBehaviour
         isOpen = true;
         lastStateChangeFrame = Time.frameCount;
 
+        ApplyCardTextLayout();
+
         if (titleText != null) titleText.text = title != null ? title.ToUpper() : "";
         if (bodyText != null)
         {
@@ -322,6 +324,7 @@ public class ParchmentMessageUI : MonoBehaviour
 
                     if (cardCanvasGroup != null && titleText != null && bodyText != null)
                     {
+                        ApplyCardTextLayout();
                         return;
                     }
                 }
@@ -422,5 +425,66 @@ public class ParchmentMessageUI : MonoBehaviour
         pauseNoticeText.text = "JUEGO EN PAUSA";
         pauseNoticeText.fontSize = 9f;
         pauseNoticeText.color = new Color(0.545f, 0.369f, 0.2f, 1f);
+
+        ApplyCardTextLayout();
+    }
+
+    /// <summary>
+    /// Asegura que el título (Titulo_Pista) y el cuerpo del mensaje (Texto_Pista) tengan
+    /// regiones separadas, alineación superior-izquierda y auto-ajuste de fuente para que
+    /// el texto nunca se encime con el título del pergamino.
+    /// </summary>
+    private void ApplyCardTextLayout()
+    {
+        if (titleText != null)
+        {
+            RectTransform titleRt = titleText.rectTransform;
+            if (titleRt != null)
+            {
+                titleRt.anchorMin = new Vector2(0.5f, 0.5f);
+                titleRt.anchorMax = new Vector2(0.5f, 0.5f);
+                titleRt.pivot = new Vector2(0.5f, 0.5f);
+                titleRt.anchoredPosition = new Vector2(34f, 88f);
+                titleRt.sizeDelta = new Vector2(524f, 30f);
+            }
+            titleText.alignment = TextAlignmentOptions.TopLeft;
+            titleText.enableWordWrapping = false;
+            titleText.enableAutoSizing = true;
+            titleText.fontSizeMin = 14f;
+            titleText.fontSizeMax = 18.5f;
+            titleText.fontSize = 18.5f;
+        }
+
+        if (bodyText != null)
+        {
+            RectTransform bodyRt = bodyText.rectTransform;
+            if (bodyRt != null)
+            {
+                bodyRt.anchorMin = new Vector2(0.5f, 0.5f);
+                bodyRt.anchorMax = new Vector2(0.5f, 0.5f);
+                bodyRt.pivot = new Vector2(0.5f, 0.5f);
+                bodyRt.anchoredPosition = new Vector2(34f, -2f);
+                bodyRt.sizeDelta = new Vector2(524f, 124f);
+            }
+            bodyText.alignment = TextAlignmentOptions.TopLeft;
+            bodyText.enableWordWrapping = true;
+            bodyText.enableAutoSizing = true;
+            bodyText.fontSizeMin = 13.5f;
+            bodyText.fontSizeMax = 16.5f;
+            bodyText.fontSize = 16.5f;
+            bodyText.lineSpacing = 8f;
+        }
+
+        if (pauseNoticeText != null)
+        {
+            pauseNoticeText.enableAutoSizing = false;
+            pauseNoticeText.fontSize = 11.5f;
+        }
+
+        if (continueHintText != null)
+        {
+            continueHintText.enableAutoSizing = false;
+            continueHintText.fontSize = 13.5f;
+        }
     }
 }

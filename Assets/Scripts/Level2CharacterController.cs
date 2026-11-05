@@ -83,7 +83,11 @@ namespace Cainos.PixelArtTopDown_Basic
                 lantern.enabled = true;
             }
 
-            // 3. Configurar la cámara centrada y con los límites exactos de los bordes del mapa ([-22, 22], [-13, 13])
+            // 3. Configurar la cámara centrada y con los límites exactos de los bordes del mapa
+            string activeScene = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+            bool isLevel3 = activeScene.IndexOf("Nivel3", System.StringComparison.OrdinalIgnoreCase) >= 0 ||
+                            activeScene.IndexOf("Level3", System.StringComparison.OrdinalIgnoreCase) >= 0;
+
             Camera mainCam = Camera.main;
             if (mainCam != null)
             {
@@ -97,12 +101,12 @@ namespace Cainos.PixelArtTopDown_Basic
                 var camBounds = mainCam.GetComponent<CameraBounds2D>();
                 if (camBounds != null)
                 {
-                    camBounds.minBounds = new Vector2(-22f, -13f);
-                    camBounds.maxBounds = new Vector2(22f, 13f);
+                    camBounds.minBounds = isLevel3 ? new Vector2(-22f, -17f) : new Vector2(-22f, -13f);
+                    camBounds.maxBounds = isLevel3 ? new Vector2(26f, 13f) : new Vector2(22f, 13f);
                 }
             }
 
-            // 4. Quitar SortingGroup y WorldDepth2D de todos los objetos para que el ordenamiento por pivote Y en Layer 1 (order = 2) funcione igual que en Nivel 1
+            // 4. Quitar SortingGroup y WorldDepth2D de todos los objetos de escenario para que el ordenamiento por pivote Y en Layer 1 (order = 2) funcione igual que en Nivel 1
             foreach (var wd in FindObjectsOfType<WorldDepth2D>(true))
             {
                 if (wd != null) Destroy(wd);
@@ -207,7 +211,7 @@ namespace Cainos.PixelArtTopDown_Basic
                 }
             }
 
-            // 6. Asegurar que los duendes activos tengan EnemyHealth, GoblinCombat, barra de vida e iconos (! / ?)
+            // 6. Asegurar que los duendes activos tengan EnemyHealth, SortingGroup y barra de vida
             foreach (var goblin in FindObjectsOfType<GoblinAI>(false))
             {
                 if (goblin == null) continue;
@@ -223,10 +227,6 @@ namespace Cainos.PixelArtTopDown_Basic
                 {
                     var eh = goblin.gameObject.AddComponent<EnemyHealth>();
                     eh.ConfigureVariant(EnemyHealth.EnemyVariant.NormalGoblin);
-                }
-                if (goblin.GetComponent<GoblinCombat>() == null)
-                {
-                    goblin.gameObject.AddComponent<GoblinCombat>();
                 }
                 var oldBar = goblin.GetComponent<EnemyFloatingHealthBar>();
                 if (oldBar != null) Destroy(oldBar);

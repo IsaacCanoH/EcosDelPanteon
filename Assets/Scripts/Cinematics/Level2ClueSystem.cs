@@ -84,10 +84,13 @@ public class Level2ClueSystem : MonoBehaviour
 
         if (count == 1)
         {
+            bool pillarNeedsPickup = isLvl3 && RunePillarLanternUpgrade.Instance != null && !RunePillarLanternUpgrade.Instance.IsUpgradeGranted;
             ParchmentMessageUI.Instance.Show(
                 "PISTA 2 DE 3",
                 isLvl3
-                    ? "Cruza el camino central hacia el jardín funerario de la derecha, cerca del almacén del panteón, donde los arqueros custodian el segundo juguete."
+                    ? (pillarNeedsPickup
+                        ? "¡El Pilar de Luz en la construcción junto al primer altar se iluminó de azul y guarda un poder mágico! Acércate a él y luego busca el Muñeco Vudú a la derecha."
+                        : "Cruza el camino central hacia el jardín de la derecha, cerca del almacén del panteón, donde custodian el Muñeco Vudú.")
                     : "En la explanada noreste del panteón, entre las lápidas oscuras, aguarda el segundo juguete. Busca en su altar.",
                 null,
                 null,
@@ -99,7 +102,7 @@ public class Level2ClueSystem : MonoBehaviour
             ParchmentMessageUI.Instance.Show(
                 "PISTA 3 DE 3",
                 isLvl3
-                    ? "Sigue el camino central hacia el norte, frente a la puerta superior del panteón, donde aguarda el último altar y La Bruja."
+                    ? "Sigue el camino central hacia el norte, frente a la puerta superior del panteón, donde aguarda la Vela Ritual y La Bruja."
                     : "En la gran explanada sur descansa el último juguete. Prepárate para la horda y el Niño Espectral.",
                 null,
                 null,
@@ -131,10 +134,15 @@ public class Level2ClueSystem : MonoBehaviour
 
         if (count == 0)
         {
+            bool pillarAlreadyLit = isLvl3 && RunePillarLanternUpgrade.Instance != null &&
+                                    RunePillarLanternUpgrade.Instance.IsActivated &&
+                                    !RunePillarLanternUpgrade.Instance.IsUpgradeGranted;
             ParchmentMessageUI.Instance.Show(
                 "PISTA 1 DE 3",
                 isLvl3
-                    ? "En el antiguo panteón del lado izquierdo, entre las hileras de tumbas al sur de la entrada, descansa el primer juguete. Busca en su altar."
+                    ? (pillarAlreadyLit
+                        ? "¡El Pilar de Luz en la construcción junto al primer altar se iluminó de azul y tiene un poder mágico! Recoge la Poción Morada y acércate al pilar."
+                        : "En el antiguo panteón del lado izquierdo, entre las tumbas al sur de la entrada, descansa la Poción Morada. Busca en su altar.")
                     : "En la explanada noroeste, entre los árboles y las tumbas antiguas, descansa el primer juguete. Busca en su altar.",
                 null,
                 null,
@@ -143,10 +151,13 @@ public class Level2ClueSystem : MonoBehaviour
         }
         else if (count == 1)
         {
+            bool pillarNeedsPickup = isLvl3 && RunePillarLanternUpgrade.Instance != null && !RunePillarLanternUpgrade.Instance.IsUpgradeGranted;
             ParchmentMessageUI.Instance.Show(
                 "PISTA 2 DE 3",
                 isLvl3
-                    ? "Cruza el camino central hacia el jardín funerario de la derecha, cerca del almacén del panteón, donde los arqueros custodian el segundo juguete."
+                    ? (pillarNeedsPickup
+                        ? "¡El Pilar de Luz en la construcción junto al primer altar se iluminó de azul y guarda un poder mágico! Acércate a él y luego busca el Muñeco Vudú a la derecha."
+                        : "Cruza el camino central hacia el jardín de la derecha, cerca del almacén del panteón, donde custodian el Muñeco Vudú.")
                     : "En la explanada noreste del panteón, entre las lápidas oscuras, aguarda el segundo juguete. Busca en su altar.",
                 null,
                 null,
@@ -158,7 +169,7 @@ public class Level2ClueSystem : MonoBehaviour
             ParchmentMessageUI.Instance.Show(
                 "PISTA 3 DE 3",
                 isLvl3
-                    ? "Sigue el camino central hacia el norte, frente a la puerta superior del panteón, donde aguarda el último altar y La Bruja."
+                    ? "Sigue el camino central hacia el norte, frente a la puerta superior del panteón, donde aguarda la Vela Ritual y La Bruja."
                     : "En la gran explanada sur descansa el último juguete. Prepárate para la horda y el Niño Espectral.",
                 null,
                 null,
@@ -170,7 +181,7 @@ public class Level2ClueSystem : MonoBehaviour
             ParchmentMessageUI.Instance.Show(
                 "SALIDA DEL PANTEÓN",
                 isLvl3
-                    ? "Recoge los 3 juguetes en el último altar tras vencer a La Bruja para que la puerta superior del panteón se abra."
+                    ? "Recoge la Vela Ritual en el último altar tras vencer a La Bruja para que la puerta superior del panteón se abra."
                     : "Recoge los 3 juguetes y el Machete en el último altar para que la puerta derecha del panteón se abra.",
                 null,
                 null,

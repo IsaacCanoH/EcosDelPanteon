@@ -88,16 +88,39 @@ public class Level2IntroSequence : MonoBehaviour
             pUi.AddComponent<ParchmentMessageUI>();
         }
 
+        string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        bool isLvl3 = sceneName.IndexOf("Nivel3", StringComparison.OrdinalIgnoreCase) >= 0 ||
+                      sceneName.IndexOf("Level3", StringComparison.OrdinalIgnoreCase) >= 0;
+
+        // Reproducir la cinemática inicial de La Llorona al comenzar el nivel:
+        // - En Nivel 3: La Llorona expresa su enojo por la derrota del Espectro del Niño, invoca duendes tras pulsar P,
+        //   les lanza el hechizo de Aura Verde y anuncia que sus mejores guerreros ahora serán más fuertes.
+        // - En Nivel 2: La Llorona aparece al inicio del nivel (ya no aparece al recoger el primer objeto).
+        LloronaCinematicSequence lloronaSeq = GetComponent<LloronaCinematicSequence>();
+        if (lloronaSeq == null) lloronaSeq = gameObject.AddComponent<LloronaCinematicSequence>();
+
+        Vector3 introSpawnBase = playerTransform != null ? playerTransform.position : new Vector3(-16.2f, 2.5f, 0f);
+        bool lloronaIntroDone = false;
+        if (isLvl3)
+        {
+            lloronaSeq.PlayLevel3GreenAuraIntroCinematic(introSpawnBase, () => { lloronaIntroDone = true; });
+        }
+        else
+        {
+            lloronaSeq.PlayEncounter1Cinematic(introSpawnBase + new Vector3(2.6f, -0.5f, 0f), () => { lloronaIntroDone = true; });
+        }
+
+        while (!lloronaIntroDone)
+        {
+            yield return null;
+        }
+
         if (ParchmentMessageUI.Instance != null)
         {
-            string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
-            bool isLvl3 = sceneName.IndexOf("Nivel3", StringComparison.OrdinalIgnoreCase) >= 0 ||
-                          sceneName.IndexOf("Level3", StringComparison.OrdinalIgnoreCase) >= 0;
-
             ParchmentMessageUI.Instance.Show(
                 "OBJETIVO",
                 isLvl3
-                    ? "Recupera los 3 juguetes para desafiar a La Bruja.\n" +
+                    ? "Recupera la Poción Morada, el Muñeco Vudú y la Vela.\n" +
                       "Cuentas con tus armas del nivel anterior:\n" +
                       "1: Farol (17)  |  2: Cuchillo (28)  |  3: Machete (50).\n" +
                       "<link=\"key:F\"><color=#00000000> F </color></link> Atacar con el arma equipada."

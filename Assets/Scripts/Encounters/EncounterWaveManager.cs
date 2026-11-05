@@ -44,6 +44,14 @@ public class EncounterWaveManager : MonoBehaviour
     private readonly List<EnemyHealth> activeEnemies = new List<EnemyHealth>();
     private readonly Queue<int> pendingSpawnQueue = new Queue<int>(); // 0 = normal, 1 = chubby, 2 = archer
     private Coroutine encounterRoutine;
+    private int spawnedCounterInWave = 0;
+
+    private static bool IsLevel3Scene()
+    {
+        string sceneName = UnityEngine.SceneManagement.SceneManager.GetActiveScene().name;
+        return sceneName.IndexOf("Nivel3", StringComparison.OrdinalIgnoreCase) >= 0 ||
+               sceneName.IndexOf("Level3", StringComparison.OrdinalIgnoreCase) >= 0;
+    }
 
     public void StartEncounter()
     {
@@ -91,22 +99,35 @@ public class EncounterWaveManager : MonoBehaviour
             OnWaveStarted?.Invoke(CurrentWaveIndex + 1, waves.Length);
             Debug.Log($"[Encuentro] Iniciando Oleada {CurrentWaveIndex + 1}/{waves.Length} ({currentWave.TotalEnemies} enemigos)");
 
-            // Llenar y mezclar aleatoriamente la cola de spawns (duendes normales, gorditos y arqueros)
+            // Llenar la cola alternando entre duendes fuertes (1), arqueros (2) y duendes base (0)
             pendingSpawnQueue.Clear();
-            var queueList = new System.Collections.Generic.List<int>();
-            for (int n = 0; n < currentWave.normalGoblins; n++) queueList.Add(0);
-            for (int c = 0; c < currentWave.chubbyGoblins; c++) queueList.Add(1);
-            for (int a = 0; a < currentWave.archerGoblins; a++) queueList.Add(2);
+            int remChubby = currentWave.chubbyGoblins;
+            int remArcher = currentWave.archerGoblins;
+            int remNormal = currentWave.normalGoblins;
 
-            // Barajado Fisher-Yates para distribución aleatoria
-            for (int k = queueList.Count - 1; k > 0; k--)
+            while (remChubby > 0 || remArcher > 0 || remNormal > 0)
             {
-                int rnd = UnityEngine.Random.Range(0, k + 1);
-                int temp = queueList[k];
-                queueList[k] = queueList[rnd];
-                queueList[rnd] = temp;
+                if (remChubby > 0)
+                {
+                    pendingSpawnQueue.Enqueue(1);
+                    remChubby--;
+                }
+                if (remArcher > 0)
+                {
+                    pendingSpawnQueue.Enqueue(2);
+                    remArcher--;
+                }
+                if (remChubby > 0 && remChubby >= remNormal && remChubby >= remArcher)
+                {
+                    pendingSpawnQueue.Enqueue(1);
+                    remChubby--;
+                }
+                if (remNormal > 0)
+                {
+                    pendingSpawnQueue.Enqueue(0);
+                    remNormal--;
+                }
             }
-            foreach (var enemyType in queueList) pendingSpawnQueue.Enqueue(enemyType);
 
             // Spawneo progresivo según concurrencia
             while (pendingSpawnQueue.Count > 0 || activeEnemies.Count > 0)
@@ -176,7 +197,12 @@ public class EncounterWaveManager : MonoBehaviour
 
         GoblinVariantConfig variant = enemyObj.GetComponent<GoblinVariantConfig>();
         if (variant == null) variant = enemyObj.AddComponent<GoblinVariantConfig>();
-        variant.SetVariant(isChubby, isArcher);
+
+        // En Nivel 3: una parte de los duendes base, duendes fuertes y arqueros aparecen con el Aura Verde
+        // otorgada por el hechizo de La Llorona (más resistentes según su tipo).
+        spawnedCounterInWave++;
+        bool hasGreenAura = IsLevel3Scene() && ((spawnedCounterInWave % 2 == 0) || (CurrentWaveIndex >= 1 && spawnedCounterInWave % 3 == 0));
+        variant.SetVariant(isChubby, isArcher, hasGreenAura);
 
         GoblinAI ai = enemyObj.GetComponent<GoblinAI>();
         if (ai != null)
@@ -185,9 +211,12 @@ public class EncounterWaveManager : MonoBehaviour
             ai.enablePatrol = true;
             ai.BeginWaveCombat(Mathf.Max(1, CurrentWaveIndex + 1));
 
-            // Si es Duende Arquero, volver a aplicar su configuración de distancia después de BeginWaveCombat
+            // Si es Duende Arquero, volver a aplicar su configuración de distancia y mayor velocidad después de BeginWaveCombat
             if (isArcher)
             {
+                ai.moveSpeed = 1.85f;
+                ai.patrolSpeed = 1.15f;
+                ai.secondCoinSpeed = 2.40f;
                 var archerCtrl = enemyObj.GetComponent<GoblinArcherController>();
                 if (archerCtrl != null)
                 {
@@ -219,9 +248,9 @@ public class EncounterWaveManager : MonoBehaviour
     }
 
     private const float MinMapX = -17.5f;
-    private const float MaxMapX = 17.5f;
-    private const float MinMapY = -8.5f;
-    private const float MaxMapY = 8.5f;
+    private const float MaxMapX = 24.5f;
+    private const float MinMapY = -15.5f;
+    private const float MaxMapY = 10.5f;
 
     private Vector3 GetRandomVariedSpawnPosition()
     {
