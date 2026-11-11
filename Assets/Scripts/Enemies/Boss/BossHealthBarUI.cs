@@ -13,6 +13,7 @@ public class BossHealthBarUI : MonoBehaviour
     public Image ghostFill;
     public TMP_Text bossNameText;
     public TMP_Text healthNumbersText;
+    [SerializeField, Min(0f)] private float topMargin = 22f;
 
     private EnemyHealth currentBossHealth;
     private Coroutine ghostFillRoutine;
@@ -52,34 +53,41 @@ public class BossHealthBarUI : MonoBehaviour
 
     public void BindBoss(EnemyHealth bossHealth, string bossName = "NIÑO ESPECTRAL")
     {
-        if (currentBossHealth != null)
-        {
-            currentBossHealth.OnHealthChanged -= HandleHealthChanged;
-            currentBossHealth.OnDied -= HandleBossDied;
-        }
-
+        UnbindBoss();
         currentBossHealth = bossHealth;
-        if (currentBossHealth != null)
-        {
-            currentBossHealth.OnHealthChanged += HandleHealthChanged;
-            currentBossHealth.OnDied += HandleBossDied;
+        if (currentBossHealth == null) return;
 
-            currentGhostRatio = Mathf.Clamp01((float)currentBossHealth.currentHealth / Mathf.Max(1, currentBossHealth.maxHealth));
-            ApplyBarRatio(ghostFill, currentGhostRatio);
+        currentBossHealth.OnHealthChanged += HandleHealthChanged;
+        currentBossHealth.OnDied += HandleBossDied;
+        ShowHealth(bossName, currentBossHealth.currentHealth, currentBossHealth.maxHealth);
+    }
 
-            if (bossNameText != null) bossNameText.text = bossName;
-            UpdateDisplay(currentBossHealth.currentHealth, currentBossHealth.maxHealth);
-            FadeIn();
-        }
+    internal void ShowUnboundBoss(string bossName, int current, int max)
+    {
+        UnbindBoss();
+        ShowHealth(bossName, current, max);
+    }
+
+    private void ShowHealth(string bossName, int current, int max)
+    {
+        currentGhostRatio = Mathf.Clamp01((float)current / Mathf.Max(1, max));
+        ApplyBarRatio(ghostFill, currentGhostRatio);
+        if (bossNameText != null) bossNameText.text = bossName;
+        UpdateDisplay(current, max);
+        FadeIn();
+    }
+
+    private void UnbindBoss()
+    {
+        if (currentBossHealth == null) return;
+        currentBossHealth.OnHealthChanged -= HandleHealthChanged;
+        currentBossHealth.OnDied -= HandleBossDied;
+        currentBossHealth = null;
     }
 
     private void OnDestroy()
     {
-        if (currentBossHealth != null)
-        {
-            currentBossHealth.OnHealthChanged -= HandleHealthChanged;
-            currentBossHealth.OnDied -= HandleBossDied;
-        }
+        UnbindBoss();
     }
 
     private void HandleHealthChanged(int current, int max)
@@ -97,7 +105,7 @@ public class BossHealthBarUI : MonoBehaviour
         if (barImage == null) return;
         float clamped = Mathf.Clamp01(ratio);
         if (barImage.sprite == null) barImage.sprite = GetWhiteSprite();
-        barImage.fillAmount = clamped;
+        barImage.fillAmount = 1f;
 
         RectTransform rt = barImage.rectTransform;
         if (rt != null)
@@ -109,7 +117,7 @@ public class BossHealthBarUI : MonoBehaviour
         }
     }
 
-    private void UpdateDisplay(int current, int max)
+    internal void UpdateDisplay(int current, int max)
     {
         float ratio = Mathf.Clamp01((float)current / Mathf.Max(1, max));
         ApplyBarRatio(healthFill, ratio);
@@ -194,7 +202,7 @@ public class BossHealthBarUI : MonoBehaviour
         rootRt.anchorMin = new Vector2(0.5f, 1f);
         rootRt.anchorMax = new Vector2(0.5f, 1f);
         rootRt.pivot = new Vector2(0.5f, 1f);
-        rootRt.anchoredPosition = new Vector2(0f, -22f);
+        rootRt.anchoredPosition = new Vector2(0f, -topMargin);
         rootRt.sizeDelta = new Vector2(480f, 55f);
 
         Sprite whiteSprite = GetWhiteSprite();

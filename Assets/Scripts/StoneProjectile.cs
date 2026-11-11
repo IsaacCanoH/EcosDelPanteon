@@ -60,12 +60,12 @@ public class StoneProjectile : MonoBehaviour
                 continue;
 
             GoblinAI goblin = candidate.GetComponentInParent<GoblinAI>();
-            EnemyHealth eh = candidate.GetComponentInParent<EnemyHealth>();
+            IDamageable damageable = candidate.GetComponentInParent<IDamageable>();
             Rigidbody2D attached = candidate.attachedRigidbody;
             bool solid = attached == null || attached.bodyType == RigidbodyType2D.Static;
 
             bool isEnemy = (goblin != null && goblin.isActiveAndEnabled) ||
-                           (eh != null && !eh.IsDead && eh.isActiveAndEnabled);
+                           (damageable is Behaviour damageableBehaviour && damageableBehaviour.isActiveAndEnabled && !damageable.IsDead);
 
             if (!solid && !isEnemy) continue;
 
@@ -89,10 +89,10 @@ public class StoneProjectile : MonoBehaviour
             if (candidate == null || candidate.isTrigger) continue;
 
             GoblinAI goblin = candidate.GetComponentInParent<GoblinAI>();
-            EnemyHealth eh = candidate.GetComponentInParent<EnemyHealth>();
+            IDamageable damageable = candidate.GetComponentInParent<IDamageable>();
 
             bool isEnemy = (goblin != null && goblin.isActiveAndEnabled) ||
-                           (eh != null && !eh.IsDead && eh.isActiveAndEnabled);
+                           (damageable is Behaviour damageableBehaviour && damageableBehaviour.isActiveAndEnabled && !damageable.IsDead);
 
             if (!isEnemy || hits[i].distance >= nearestDistance - 0.0001f ||
                 !HasClearApproach(origin, candidate, goblin))
@@ -113,11 +113,7 @@ public class StoneProjectile : MonoBehaviour
         {
             if (target != null) target.Stun(stunSeconds);
 
-            var enemyHealth = nearest.GetComponentInParent<EnemyHealth>();
-            if (enemyHealth != null)
-            {
-                enemyHealth.TakeDamage(10, direction);
-            }
+            nearest.GetComponentInParent<IDamageable>()?.TakeDamage(10, direction);
 
             if (owner != null) owner.PlayImpact(transform.position);
             Finish();

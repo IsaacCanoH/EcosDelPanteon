@@ -16,6 +16,9 @@ public class SpectralProjectile : MonoBehaviour
     private UnityEngine.Rendering.Universal.Light2D orbLight;
     private float spawnTime;
     private bool hitSomething = false;
+    private PlayerLantern playerLantern;
+
+    internal bool CanBeDispelledByLantern { get; set; }
 
     private static Sprite cachedPurpleOrbSprite;
 
@@ -133,6 +136,9 @@ public class SpectralProjectile : MonoBehaviour
         if (customSpeed > 0f) speed = customSpeed;
         if (customDamage > 0) damage = customDamage;
 
+        if (CanBeDispelledByLantern && PlayerHealth.ActiveInstance != null)
+            playerLantern = PlayerHealth.ActiveInstance.GetComponent<PlayerLantern>();
+
         float angle = Mathf.Atan2(moveDirection.y, moveDirection.x) * Mathf.Rad2Deg;
         transform.rotation = Quaternion.Euler(0f, 0f, angle);
     }
@@ -142,6 +148,7 @@ public class SpectralProjectile : MonoBehaviour
         if (hitSomething) return;
 
         transform.position += (Vector3)(moveDirection * (speed * Time.deltaTime));
+        if (playerLantern != null && playerLantern.TryDispelSpectralProjectile(this)) return;
 
         // Verificación directa contra la hitbox de cuerpo completo del Player (cabeza, torso y pies)
         PlayerHealth activePlayer = PlayerHealth.ActiveInstance;
@@ -163,9 +170,20 @@ public class SpectralProjectile : MonoBehaviour
         }
     }
 
+    internal bool Dispel()
+    {
+        if (hitSomething) return false;
+        hitSomething = true;
+        if (sr != null) sr.enabled = false;
+        if (orbLight != null) orbLight.enabled = false;
+        Destroy(gameObject);
+        return true;
+    }
+
     private void OnTriggerEnter2D(Collider2D other)
     {
         if (hitSomething) return;
+        if (playerLantern != null && playerLantern.TryDispelSpectralProjectile(this)) return;
 
         // No dañar a otros enemigos ni al jefe
         if (other.GetComponentInParent<EnemyHealth>() != null || other.GetComponentInParent<SpectralChildBossAI>() != null)

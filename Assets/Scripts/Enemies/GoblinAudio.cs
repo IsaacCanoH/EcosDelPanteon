@@ -40,7 +40,7 @@ public class GoblinAudio : MonoBehaviour
     private float ultimoMovimiento = float.NegativeInfinity;
     private float ultimoPaso = float.NegativeInfinity;
     private float siguienteVoz;
-    private float volumenVoz;
+    private float factorVoz = 1f;
     private int modoVoz = -1;
     private int ultimoGolpe = -1;
     private bool pausado;
@@ -49,6 +49,8 @@ public class GoblinAudio : MonoBehaviour
     private static GoblinAudio vozActiva;
     private static float siguienteTurnoVoz;
     private static float siguientePasoGrupo;
+    private static float siguienteDisparoGrupo;
+    private static float siguienteAtaqueGrupo;
     private float finTurnoVoz;
     private float siguienteVozPropia;
 
@@ -58,17 +60,29 @@ public class GoblinAudio : MonoBehaviour
         vozActiva = null;
         siguienteTurnoVoz = 0f;
         siguientePasoGrupo = 0f;
+        siguienteDisparoGrupo = 0f;
+        siguienteAtaqueGrupo = 0f;
     }
 
-    private bool ReservarVoz(AudioSource fuente, float duracion)
+    private bool ReservarVoz(AudioSource fuente, float duracion, bool ataque = false)
     {
-        if (Time.time < siguienteVozPropia || player == null || fuente == null ||
+        if (player == null || fuente == null ||
             Vector2.Distance(transform.position, player.position) >= fuente.maxDistance)
             return false;
-        if (vozActiva != this &&
-            ((vozActiva != null && Time.time < vozActiva.finTurnoVoz) ||
-             Time.time < siguienteTurnoVoz))
+
+        if (ataque)
+        {
+            if (Time.time < siguienteAtaqueGrupo) return false;
+
+            siguienteAtaqueGrupo = Time.time + Mathf.Max(0.65f, duracion + 0.1f);
+            if (vozActiva != null) vozActiva.DesvanecerVozActual();
+        }
+        else if (Time.time < siguienteVozPropia ||
+                 (vozActiva != this &&
+                  ((vozActiva != null && Time.time < vozActiva.finTurnoVoz) ||
+                   Time.time < siguienteTurnoVoz)))
             return false;
+
         vozActiva = this;
         finTurnoVoz = Time.time + duracion + 0.05f;
         siguienteVozPropia = Time.time + Mathf.Max(4f, duracion + 0.6f);
@@ -108,9 +122,11 @@ public class GoblinAudio : MonoBehaviour
             return;
         }
 
-        volumenVoz = (voz != null ? voz.volume : 0.85f) * AudioManager.EnemyVolume;
-        if (pasos != null) pasos.volume = 0.55f * AudioManager.EnemyVolume;
-        if (ataques != null) ataques.volume = 0.9f * AudioManager.EnemyVolume;
+        // La distancia del sonido se calcula en XY, sin la profundidad de la cámara.
+        voz.spatialBlend = 0f;
+        pasos.spatialBlend = 0f;
+        if (ataques != null) ataques.spatialBlend = 0f;
+        ActualizarMezcla();
         voz.playOnAwake = false;
         pasos.playOnAwake = false;
         voz.loop = false;
@@ -167,6 +183,8 @@ public class GoblinAudio : MonoBehaviour
             return;
         }
 
+        ActualizarMezcla();
+
         if (vozActiva == this && Time.time >= finTurnoVoz &&
             !voz.isPlaying && (ataques == null || !ataques.isPlaying))
             LiberarVoz();
@@ -191,6 +209,7 @@ public class GoblinAudio : MonoBehaviour
 
             transicionVoz = null;
             desvaneciendo = false;
+            factorVoz = 1f;
 
             siguienteVoz = Time.time + (persigue
                 ? Random.Range(0.15f, 0.6f)
@@ -198,8 +217,6 @@ public class GoblinAudio : MonoBehaviour
 
             if (voz.isPlaying)
                 transicionVoz = StartCoroutine(DesvanecerVoz());
-            else
-                voz.volume = volumenVoz;
         }
 
         if (desvaneciendo ||
@@ -227,7 +244,8 @@ public class GoblinAudio : MonoBehaviour
             return;
         }
         voz.clip = clip;
-        voz.volume = volumenVoz;
+        factorVoz = 1f;
+        ActualizarMezcla();
         voz.pitch = tono;
         voz.Play();
 
@@ -247,6 +265,7 @@ public class GoblinAudio : MonoBehaviour
             Time.timeScale == 0f ||
             !PuedeSonar() ||
             !EstaCorriendo() ||
+            pasos.volume <= 0f ||
             Time.time - ultimoPaso < 0.1f ||
             Time.time < siguientePasoGrupo ||
             golpes == null ||
@@ -299,10 +318,11 @@ public class GoblinAudio : MonoBehaviour
             return;
 
         float tono = Random.Range(0.97f, 1.03f);
-        if (!ReservarVoz(ataques, clip.length / tono)) return;
+        if (!ReservarVoz(ataques, clip.length / tono, ataque: true)) return;
         ultimoAtaqueAudio = Time.time;
         ultimoSonidoAtaque = indice;
 
+        ActualizarMezcla();
         ataques.Stop();
         ataques.pitch = tono;
         ataques.PlayOneShot(clip);
@@ -311,17 +331,42 @@ public class GoblinAudio : MonoBehaviour
             siguienteVoz,
             Time.time + clip.length / ataques.pitch + 0.5f);
 
-        // Desvanecer la voz anterior al iniciar el ataque.
-        if (transicionVoz != null)
-            StopCoroutine(transicionVoz);
+        DesvanecerVozActual();
+    }
 
-        transicionVoz = null;
-        desvaneciendo = false;
+    public void PlayBowShot(AudioClip clip)
+    {
+        if (!isActiveAndEnabled || clip == null || ataques == null ||
+            Time.timeScale == 0f || !PuedeSonar() || Time.time < siguienteDisparoGrupo)
+            return;
 
-        if (voz.isPlaying)
-            transicionVoz = StartCoroutine(DesvanecerVoz());
-        else
-            voz.volume = volumenVoz;
+        ActualizarMezcla();
+        if (ataques.volume <= 0f) return;
+
+        siguienteDisparoGrupo = Time.time + 0.12f;
+        ataques.PlayOneShot(clip, 0.85f);
+    }
+
+    public void ActualizarMezcla()
+    {
+        if (player == null) return;
+
+        Vector2 delta = (Vector2)(transform.position - player.position);
+        float distancia = delta.magnitude;
+        float volumen = AudioManager.EnemyVolume;
+        AplicarDistancia(voz, delta.x, distancia, 0.78f * volumen * factorVoz);
+        AplicarDistancia(pasos, delta.x, distancia, 0.55f * volumen);
+        AplicarDistancia(ataques, delta.x, distancia, 0.60f * volumen);
+    }
+
+    private static void AplicarDistancia(AudioSource fuente, float lado, float distancia, float volumen)
+    {
+        if (fuente == null) return;
+
+        float alcance = fuente.maxDistance;
+        float caida = Mathf.InverseLerp(fuente.minDistance, alcance, distancia);
+        fuente.volume = volumen * (1f - Mathf.SmoothStep(0f, 1f, caida));
+        fuente.panStereo = 0.65f * Mathf.Clamp(lado / Mathf.Max(1f, alcance * 0.5f), -1f, 1f);
     }
 
     private bool EstaCorriendo()
@@ -341,21 +386,29 @@ public class GoblinAudio : MonoBehaviour
                 !collector.IsLevelFinished);
     }
 
+    private void DesvanecerVozActual()
+    {
+        if (voz.isPlaying && !desvaneciendo)
+            transicionVoz = StartCoroutine(DesvanecerVoz());
+    }
+
     private IEnumerator DesvanecerVoz()
     {
         desvaneciendo = true;
-        float inicio = voz.volume;
+        float inicio = factorVoz;
         float tiempo = 0f;
 
         while (tiempo < 0.08f)
         {
             tiempo += Time.deltaTime;
-            voz.volume = Mathf.Lerp(inicio, 0f, tiempo / 0.08f);
+            factorVoz = Mathf.Lerp(inicio, 0f, tiempo / 0.08f);
+            ActualizarMezcla();
             yield return null;
         }
 
         voz.Stop();
-        voz.volume = volumenVoz;
+        factorVoz = 1f;
+        ActualizarMezcla();
         if (ataques == null || !ataques.isPlaying) LiberarVoz();
         desvaneciendo = false;
         transicionVoz = null;
@@ -433,11 +486,8 @@ public class GoblinAudio : MonoBehaviour
         transicionVoz = null;
         desvaneciendo = false;
 
-        if (voz != null)
-        {
-            voz.Stop();
-            voz.volume = volumenVoz;
-        }
+        factorVoz = 1f;
+        if (voz != null) voz.Stop();
 
         if (pasos != null)
             pasos.Stop();

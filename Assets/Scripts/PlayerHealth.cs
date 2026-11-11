@@ -111,12 +111,16 @@ public class PlayerHealth : MonoBehaviour
                projectileWorldPos.y >= minY && projectileWorldPos.y <= maxY;
     }
 
-    public void TakeDamage(int damage)
+    public void TakeDamage(int damage) => ApplyDamage(damage, false);
+
+    internal void TakeDarkRainDamage() => ApplyDamage(HealthPerHeart, true);
+
+    private void ApplyDamage(int damage, bool bypassProtection)
     {
-        if (isDead || damage <= 0 || Time.timeScale <= 0f || IsProtected)
+        if (isDead || damage <= 0 || Time.timeScale <= 0f || (!bypassProtection && IsProtected))
             return;
 
-        protectedUntil = Time.time + invulnerabilitySeconds;
+        protectedUntil = Mathf.Max(protectedUntil, Time.time + invulnerabilitySeconds);
         int previousHealth = currentHealth;
         currentHealth -= damage;
         currentHealth = Mathf.Max(currentHealth, 0);

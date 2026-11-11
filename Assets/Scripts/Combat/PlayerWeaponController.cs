@@ -22,6 +22,7 @@ public class PlayerWeaponController : MonoBehaviour
     public float macheteRange = 1.15f;
     [Range(30f, 180f)] public float attackArcAngle = 105f;
     public float attackCooldown = 0.34f;
+    [SerializeField] private bool shareMeleeSlashVisual;
 
     [Header("Referencias Opcionales")]
     public PlayerLantern lanternComponent;
@@ -53,10 +54,10 @@ public class PlayerWeaponController : MonoBehaviour
     public Sprite knifeHudSprite;
     public Sprite macheteHudSprite;
 
-    private Sprite[] downThrowSprites;
-    private Sprite[] upThrowSprites;
-    private Sprite[] rightThrowSprites;
-    private Sprite[] leftThrowSprites;
+    [SerializeField] private Sprite[] downThrowSprites;
+    [SerializeField] private Sprite[] upThrowSprites;
+    [SerializeField] private Sprite[] rightThrowSprites;
+    [SerializeField] private Sprite[] leftThrowSprites;
     private Coroutine attackAnimRoutine;
 
     public int CurrentDamage
@@ -800,14 +801,16 @@ public class PlayerWeaponController : MonoBehaviour
             if (playerSprite != null)
                 slashRenderer.sortingLayerID = playerSprite.sortingLayerID;
 
-            slashVisualObj.transform.localPosition = new Vector3(0f, 0.36f, 0f) + (Vector3)(dir * (range * 0.42f));
+            WeaponType slashWeapon = shareMeleeSlashVisual ? WeaponType.BigKnife : currentWeapon;
+            float slashRange = shareMeleeSlashVisual ? knifeRange : range;
+            slashVisualObj.transform.localPosition = new Vector3(0f, 0.36f, 0f) + (Vector3)(dir * (slashRange * 0.42f));
             slashVisualObj.transform.localRotation = Quaternion.Euler(0f, 0f, baseAngle);
 
-            float scaleMultiplier = currentWeapon == WeaponType.BigKnife ? 0.46f :
-                                    currentWeapon == WeaponType.Machete ? 0.68f : 0.55f;
+            float scaleMultiplier = slashWeapon == WeaponType.BigKnife ? 0.46f :
+                                    slashWeapon == WeaponType.Machete ? 0.68f : 0.55f;
             slashVisualObj.transform.localScale = new Vector3(scaleMultiplier, scaleMultiplier, 1f);
 
-            Color slashColor = currentWeapon == WeaponType.Machete
+            Color slashColor = slashWeapon == WeaponType.Machete
                 ? new Color(0.85f, 0.95f, 1f, 0.92f)
                 : new Color(0.95f, 0.95f, 0.98f, 0.88f);
 

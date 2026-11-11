@@ -14,6 +14,7 @@ public class EnemyTeleportSpawn : MonoBehaviour
     private Rigidbody2D rb;
     private MonoBehaviour[] aiScripts;
     private Color[] originalColors;
+    private GameObject spawnGlyph;
 
     private static Sprite circleGlyphSprite;
 
@@ -25,7 +26,8 @@ public class EnemyTeleportSpawn : MonoBehaviour
         aiScripts = new MonoBehaviour[]
         {
             GetComponent<GoblinAI>(),
-            GetComponent<EnemyHealth>()
+            GetComponent<EnemyHealth>(),
+            GetComponent<GoblinArcherController>()
         };
 
         if (renderers != null && renderers.Length > 0)
@@ -60,7 +62,7 @@ public class EnemyTeleportSpawn : MonoBehaviour
         SetRenderersAlpha(0f);
 
         // 2. Crear glifo o círculo de aviso en el suelo
-        GameObject glyph = new GameObject("TeleportGlyph");
+        GameObject glyph = spawnGlyph = new GameObject("TeleportGlyph");
         glyph.transform.position = transform.position + Vector3.down * 0.15f;
         SpriteRenderer glyphRenderer = glyph.AddComponent<SpriteRenderer>();
         glyphRenderer.sprite = GetOrCreateGlyphSprite();
@@ -120,6 +122,11 @@ public class EnemyTeleportSpawn : MonoBehaviour
         }
 
         onComplete?.Invoke();
+    }
+
+    private void OnDestroy()
+    {
+        if (spawnGlyph != null) Destroy(spawnGlyph);
     }
 
     private void SetRenderersAlpha(float alpha)

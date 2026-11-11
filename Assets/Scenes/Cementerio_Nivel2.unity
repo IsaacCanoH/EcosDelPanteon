@@ -29381,6 +29381,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     m_RemovedComponents:
     - {fileID: 5845142068934655765, guid: f8ef642fe4fa9944a9b6baf1727c389a, type: 3}
+    - {fileID: 7177849246600284235, guid: f8ef642fe4fa9944a9b6baf1727c389a, type: 3}
   m_SourcePrefab: {fileID: 100100000, guid: f8ef642fe4fa9944a9b6baf1727c389a, type: 3}
 --- !u!4 &474437535 stripped
 Transform:
@@ -39770,6 +39771,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     m_RemovedComponents:
     - {fileID: 6416066829912967143, guid: a093673f0c216234883261ef078d4de8, type: 3}
+    - {fileID: 4109839331002259703, guid: a093673f0c216234883261ef078d4de8, type: 3}
   m_SourcePrefab: {fileID: 100100000, guid: a093673f0c216234883261ef078d4de8, type: 3}
 --- !u!114 &855912709 stripped
 MonoBehaviour:
@@ -55273,6 +55275,7 @@ PrefabInstance:
       objectReference: {fileID: 0}
     m_RemovedComponents:
     - {fileID: 3059923800622105262, guid: a3b9ebb79969e5b48bea17e4b9586803, type: 3}
+    - {fileID: 4775669476591393314, guid: a3b9ebb79969e5b48bea17e4b9586803, type: 3}
   m_SourcePrefab: {fileID: 100100000, guid: a3b9ebb79969e5b48bea17e4b9586803, type: 3}
 --- !u!4 &1415921561 stripped
 Transform:
@@ -69828,8 +69831,8 @@ MonoBehaviour:
   m_Name: 
   m_EditorClassIdentifier: 
   goblins:
-  - {fileID: 1478987174}
   - {fileID: 1184807517}
+  - {fileID: 1478987174}
   stunStars:
   - {fileID: 1040366782}
   - {fileID: 627058912}
@@ -72027,6 +72030,7 @@ MonoBehaviour:
   fadeSeconds: 1
   exitSpeed: 3
   menuScene: MenuPrincipal
+  nextLevelScene: Cementerio_Nivel2
 --- !u!1 &2118207619
 GameObject:
   m_ObjectHideFlags: 0

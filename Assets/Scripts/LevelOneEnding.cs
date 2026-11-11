@@ -18,6 +18,7 @@ public class LevelOneEnding : MonoBehaviour
     public GoblinNavigation2D exitNavigation;
     public Transform gatePoint;
     public Transform offscreenPoint;
+    [SerializeField] private CemeteryGate sideExit;
     public Cainos.PixelArtTopDown_Basic.CameraFollow cameraFollow;
     public Camera exitCamera;
     public AudioSource music;
@@ -58,6 +59,11 @@ public class LevelOneEnding : MonoBehaviour
     private bool pausedMovement;
     private GameObject previousSelection;
     private TMP_Text retryLabel;
+    private TMP_Text quitLabel;
+    private bool openingSideExit;
+    private bool epilogueVictory;
+    private Vector2 ExitThreshold => sideExit != null ? sideExit.Inside : (Vector2)gatePoint.position;
+    private Vector2 ExitDestination => sideExit != null ? sideExit.Outside : (Vector2)offscreenPoint.position;
     private IrisInNivel closingIris;
 
     private void Awake()
@@ -70,6 +76,7 @@ public class LevelOneEnding : MonoBehaviour
         playerVisual = health.GetComponent<SpriteRenderer>();
         musicVolume = music != null ? music.volume : 0f;
         retryLabel = retryButton.GetComponentInChildren<TMP_Text>(true);
+        quitLabel = quitButton.GetComponentInChildren<TMP_Text>(true);
         HideGroup(resultPanel);
         HideGroup(resultBackdrop);
         HideGroup(blackout);
@@ -188,7 +195,9 @@ public class LevelOneEnding : MonoBehaviour
     {
         resultBackdrop.transform.SetAsLastSibling();
         resultPanel.transform.SetAsLastSibling();
-        retryLabel.text = victory ? "CONTINUAR" : "REINTENTAR";
+        bool chapterComplete = victory && buttons && sideExit != null && !epilogueVictory;
+        retryLabel.text = chapterComplete ? "SIGUIENTE" : epilogueVictory ? "REINICIAR" : victory ? "CONTINUAR" : "REINTENTAR";
+        quitLabel.text = chapterComplete ? "REINICIAR" : "SALIR";
         resultTitle.text = victory ? "VICTORIA" : "DERROTA";
         resultText.text = victory
             ? "Recuperaste las tres monedas.\nEl panteón vuelve a estar en calma."
@@ -257,7 +266,7 @@ public class LevelOneEnding : MonoBehaviour
         if (exitNavigation == null || gatePoint == null || offscreenPoint == null) return false;
         Vector2 offset = (Vector2)playerCollider.bounds.center - body.position;
         Vector2 cursor = body.position + offset;
-        Vector2 goal = (Vector2)gatePoint.position + offset;
+        Vector2 goal = ExitThreshold + offset;
         var centers = new List<Vector2>();
         if (!exitNavigation.FindPath(cursor, goal, centers) || centers.Count == 0 ||
             Vector2.Distance(centers[centers.Count - 1], goal) > 0.35f)
@@ -273,7 +282,7 @@ public class LevelOneEnding : MonoBehaviour
             route.Add(cursor - offset);
             next = farthest + 1;
         }
-        route.Add(gatePoint.position);
+        route.Add(ExitThreshold);
         return true;
     }
 
@@ -282,13 +291,13 @@ public class LevelOneEnding : MonoBehaviour
         float length = 0f;
         Vector2 previous = body.position;
         foreach (Vector2 point in route) { length += Vector2.Distance(previous, point); previous = point; }
-        return length + Vector2.Distance(gatePoint.position, offscreenPoint.position);
+        return length + Vector2.Distance(ExitThreshold, ExitDestination);
     }
 
     private void FixedUpdate()
     {
-        if (!walking || State != EndingState.WalkingOut) return;
-        Vector2 target = routeIndex < route.Count ? route[routeIndex] : (Vector2)offscreenPoint.position;
+        if (!walking || openingSideExit || State != EndingState.WalkingOut) return;
+        Vector2 target = routeIndex < route.Count ? route[routeIndex] : ExitDestination;
         if (Vector2.Distance(body.position, target) < 0.035f)
         {
             if (routeIndex < route.Count)
@@ -296,11 +305,12 @@ public class LevelOneEnding : MonoBehaviour
                 routeIndex++;
                 if (routeIndex == route.Count)
                 {
-                    // Fuera de la zona jugable, continuar hasta desaparecer del encuadre.
-                    playerCollider.enabled = false;
-                    trackExitCamera = false;
-                    if (cameraFollow != null) cameraFollow.enabled = false;
-                    playerVisual.enabled = true;
+                    if (sideExit != null && !sideExit.IsOpen)
+                    {
+                        StartCoroutine(OpenSideExit());
+                        return;
+                    }
+                    LeaveThroughGate();
                 }
             }
             else
@@ -309,7 +319,7 @@ public class LevelOneEnding : MonoBehaviour
                 return;
             }
         }
-        target = routeIndex < route.Count ? route[routeIndex] : (Vector2)offscreenPoint.position;
+        target = routeIndex < route.Count ? route[routeIndex] : ExitDestination;
         Vector2 direction = target - body.position;
         if (direction.sqrMagnitude < 0.000001f) return;
         if (Mathf.Abs(direction.x) > Mathf.Abs(direction.y))
@@ -325,6 +335,28 @@ public class LevelOneEnding : MonoBehaviour
         animator.SetBool("IsMoving", true);
         body.velocity = Vector2.zero;
         body.MovePosition(Vector2.MoveTowards(body.position, target, exitSpeed * Time.fixedDeltaTime));
+    }
+
+    private IEnumerator OpenSideExit()
+    {
+        openingSideExit = true;
+        animator.SetBool("IsMoving", false);
+        body.velocity = Vector2.zero;
+        trackExitCamera = false;
+        if (exitCamera.TryGetComponent(out CameraBounds2D bounds)) bounds.enabled = false;
+        Vector2 center = sideExit.transform.position + Vector3.left * 2.65f;
+        yield return CemeterySceneMotion.Pan(exitCamera, center, 3.55f, 0.42f);
+        yield return sideExit.Animate(true);
+        LeaveThroughGate();
+        openingSideExit = false;
+    }
+
+    private void LeaveThroughGate()
+    {
+        playerCollider.enabled = false;
+        trackExitCamera = false;
+        if (cameraFollow != null) cameraFollow.enabled = false;
+        playerVisual.enabled = true;
     }
 
     private void LateUpdate()
@@ -375,6 +407,18 @@ public class LevelOneEnding : MonoBehaviour
         PauseResult();
     }
 
+    internal void ShowEpilogueVictory()
+    {
+        epilogueVictory = true;
+        State = EndingState.Finished;
+        ExitFinished = true;
+        enabled = true;
+        ShowResult(true, true);
+        resultTitle.text = "¡VICTORIA!";
+        resultText.text = "Los tres muñecos descansan en el altar.\nEl panteón vuelve a estar en calma.";
+        PauseResult();
+    }
+
     private void PauseResult()
     {
         ownsPause = true;
@@ -397,7 +441,7 @@ public class LevelOneEnding : MonoBehaviour
         RestoreClock();
 
         // Al finalizar el Nivel 1 con Victoria, el botón CONTINUAR pasa directamente al Nivel 2
-        if (State == EndingState.Finished && !string.IsNullOrEmpty(nextLevelScene) &&
+        if (State == EndingState.Finished && !epilogueVictory && !string.IsNullOrEmpty(nextLevelScene) &&
             Application.CanStreamedLevelBeLoaded(nextLevelScene))
         {
             SceneManager.LoadScene(nextLevelScene);
@@ -422,6 +466,13 @@ public class LevelOneEnding : MonoBehaviour
     {
         if (State != EndingState.Defeat && State != EndingState.Finished &&
             State != EndingState.Paused) return;
+        if (State == EndingState.Finished && sideExit != null && !epilogueVictory && !loading)
+        {
+            loading = true;
+            RestoreClock();
+            SceneManager.LoadScene(gameObject.scene.name);
+            return;
+        }
         if (Application.isEditor) ReturnToMenu();
         else Application.Quit();
     }

@@ -19,6 +19,8 @@ public class PlayerHUD : MonoBehaviour
     public TMP_Text textoMonedas;
     public Image[] monedas = new Image[3];
     public Sprite[] spritesJuguetes;
+    [SerializeField, Min(1f)] private float toyIconSize = 26f;
+    [SerializeField] private Color pendingToyColor = new Color(0.28f, 0.28f, 0.38f, 0.42f);
 
     private int ultimaVida = -1;
     private int ultimaVidaMaxima = -1;
@@ -102,7 +104,7 @@ public class PlayerHUD : MonoBehaviour
                     var rt = monedas[i].rectTransform;
                     if (rt != null)
                     {
-                        rt.sizeDelta = new Vector2(26f, 26f);
+                        rt.sizeDelta = new Vector2(toyIconSize, toyIconSize);
                     }
                 }
             }
@@ -120,10 +122,8 @@ public class PlayerHUD : MonoBehaviour
         if (playerHealth == null || (!toyMode && coinCollector == null && toyCollector == null))
             return;
 
-        int vida = (playerHealth.maxHealth > 5 || playerHealth.HealthPerHeart > 1)
-            ? Mathf.Clamp(playerHealth.ActiveHearts, 0, 5)
-            : Mathf.Clamp(playerHealth.currentHealth, 0, 5);
-        int vidaMaxima = 5;
+        int vidaMaxima = playerHealth.maxHearts;
+        int vida = playerHealth.ActiveHearts;
 
         int recogidas = toyMode
             ? (toyCollector != null ? toyCollector.Count : 0)
@@ -176,7 +176,7 @@ public class PlayerHUD : MonoBehaviour
                 bool hasThisToy = toyCollector.HasToy(i);
                 monedas[i].color = hasThisToy
                     ? Color.white
-                    : new Color(0.28f, 0.28f, 0.38f, 0.42f);
+                    : pendingToyColor;
                 monedas[i].transform.localScale = hasThisToy ? Vector3.one : new Vector3(0.92f, 0.92f, 1f);
             }
             else

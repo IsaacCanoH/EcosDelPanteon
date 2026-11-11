@@ -206,15 +206,8 @@ public class AudioManager : MonoBehaviour
     {
         // Actualizar duendes activos
         GoblinAudio[] goblins = FindObjectsOfType<GoblinAudio>();
-        foreach (var g in goblins)
-        {
-            if (g != null)
-            {
-                if (g.voz != null) g.voz.volume = 0.85f * enemyVolume;
-                if (g.pasos != null) g.pasos.volume = 0.55f * enemyVolume;
-                if (g.ataques != null) g.ataques.volume = 0.9f * enemyVolume;
-            }
-        }
+        foreach (var goblin in goblins)
+            goblin.ActualizarMezcla();
     }
 
     public void PlayPreviewEnemySound()

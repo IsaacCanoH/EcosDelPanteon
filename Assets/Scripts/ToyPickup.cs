@@ -7,6 +7,7 @@ using UnityEngine.SceneManagement;
 public sealed class ToyPickup : MonoBehaviour
 {
     [Range(0, 2)] public int toyId;
+    [SerializeField] private string displayNameOverride;
     private bool collected;
     private Transform playerTransform;
     private Vector3 initialLocalPos;
@@ -155,12 +156,10 @@ public sealed class ToyPickup : MonoBehaviour
         if (collected || target == null) return false;
 
         var collector = target.GetComponentInParent<ToyCollector>();
-        if (collector == null) collector = FindObjectOfType<ToyCollector>();
+        if (collector == null) return false;
 
-        var health = target.GetComponentInParent<PlayerHealth>();
-        if (health == null) health = FindObjectOfType<PlayerHealth>();
-
-        if (collector == null || (health != null && health.currentHealth <= 0)) return false;
+        var health = collector.GetComponent<PlayerHealth>();
+        if (health != null && health.currentHealth <= 0) return false;
 
         if (!collector.Collect(toyId)) return false;
 
@@ -168,7 +167,7 @@ public sealed class ToyPickup : MonoBehaviour
         if (col != null) col.enabled = false;
 
         bool isLvl3 = IsLevel3Scene();
-        string itemName = GetItemDisplayName(toyId, isLvl3);
+        string itemName = string.IsNullOrEmpty(displayNameOverride) ? GetItemDisplayName(toyId, isLvl3) : displayNameOverride;
         Debug.Log($"[COLECCIONABLE] ¡{itemName} recogido con éxito! Total: {collector.Count}/3");
 
         var hud = FindObjectOfType<Level2HUD>();

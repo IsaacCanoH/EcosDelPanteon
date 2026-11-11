@@ -188,7 +188,7 @@ public class GoblinArcherController : MonoBehaviour
 
     [Header("Parámetros de Disparo con Arco")]
     public float chargeDuration = 0.85f;          // Tiempo de carga antes del disparo rápido (con icono de aviso encima)
-    public float arrowSpeed = 10.5f;              // Disparo rápido de flecha
+    public float arrowSpeed = 8f;              // Disparo rápido de flecha
     public int arrowDamage = 20;                  // 1 corazón de daño
     public float rangedCooldown = 1.55f;          // Pausa entre disparos
 
@@ -202,6 +202,7 @@ public class GoblinArcherController : MonoBehaviour
     private SpriteRenderer bodyRenderer;
     private Transform playerTransform;
     private PlayerHealth playerHealth;
+    private EncounterWaveManager encounter;
 
     // Visual de la Armadura de Cuero y Casco sobre el cuerpo del duende
     private GameObject armorOverlayObj;
@@ -243,6 +244,7 @@ public class GoblinArcherController : MonoBehaviour
     {
         goblinAI = GetComponent<GoblinAI>();
         enemyHealth = GetComponent<EnemyHealth>();
+        encounter = GetComponentInParent<EncounterWaveManager>();
         rb = GetComponent<Rigidbody2D>();
         animator = GetComponent<Animator>();
         bodyRenderer = GetComponent<SpriteRenderer>();
@@ -432,7 +434,8 @@ public class GoblinArcherController : MonoBehaviour
             if (distToPlayer > meleeSwitchDistance &&
                 distToPlayer <= maxRangedShootDistance &&
                 Time.time >= nextRangedShotTime &&
-                HasLineOfSightToPlayer(myPos, playerTransform.position))
+                HasLineOfSightToPlayer(myPos, playerTransform.position) &&
+                (encounter == null || encounter.TryReserveBowCharge()))
             {
                 BeginBowCharge(toPlayer);
             }
@@ -603,6 +606,8 @@ public class GoblinArcherController : MonoBehaviour
         Vector3 spawnPos = transform.position + new Vector3(0f, 0.32f, 0f) + (Vector3)(dir * 0.42f);
 
         GameObject arrowObj = new GameObject("Flecha_Duende");
+        var encounter = GetComponentInParent<EncounterWaveManager>();
+        if (encounter != null) arrowObj.transform.SetParent(encounter.transform, true);
         arrowObj.transform.position = spawnPos;
 
         GoblinArrowProjectile arrow = arrowObj.AddComponent<GoblinArrowProjectile>();
@@ -610,10 +615,10 @@ public class GoblinArcherController : MonoBehaviour
 
         // Sonido de cuerda de arco rápida
         AudioClip shootClip = GetOrCreateBowShootClip();
-        if (shootClip != null)
-        {
+        if (TryGetComponent(out GoblinAudio goblinAudio) && goblinAudio.ataques != null)
+            goblinAudio.PlayBowShot(shootClip);
+        else if (shootClip != null)
             AudioSource.PlayClipAtPoint(shootClip, transform.position, 0.85f * AudioManager.EnemyVolume);
-        }
     }
 
     private void FaceDirection(Vector2 dir)
@@ -1075,6 +1080,7 @@ public class GoblinArrowProjectile : MonoBehaviour
 
     private Vector2 moveDirection = Vector2.right;
     private SpriteRenderer sr;
+    private PlayerLantern playerLantern;
     private float spawnTime;
     private bool hitSomething = false;
 
@@ -1084,6 +1090,9 @@ public class GoblinArrowProjectile : MonoBehaviour
         moveDirection = direction.sqrMagnitude > 0.001f ? direction.normalized : Vector2.right;
         speed = arrowSpeed;
         damage = arrowDamage;
+
+        var player = PlayerHealth.ActiveInstance;
+        playerLantern = player != null ? player.GetComponent<PlayerLantern>() : null;
 
         Rigidbody2D rb = gameObject.AddComponent<Rigidbody2D>();
         rb.isKinematic = true;
@@ -1107,6 +1116,7 @@ public class GoblinArrowProjectile : MonoBehaviour
         if (hitSomething) return;
 
         transform.position += (Vector3)(moveDirection * (speed * Time.deltaTime));
+        if (playerLantern != null && playerLantern.TryDispelArrow(this)) return;
 
         // Verificación directa contra la hitbox de cuerpo completo del Player (cabeza, torso y pies)
         PlayerHealth activePlayer = PlayerHealth.ActiveInstance;
@@ -1124,9 +1134,19 @@ public class GoblinArrowProjectile : MonoBehaviour
         }
     }
 
+    internal bool Dispel()
+    {
+        if (hitSomething) return false;
+        hitSomething = true;
+        if (sr != null) sr.enabled = false;
+        Destroy(gameObject);
+        return true;
+    }
+
     private void OnTriggerEnter2D(Collider2D other)
     {
         if (hitSomething || other == null) return;
+        if (playerLantern != null && playerLantern.TryDispelArrow(this)) return;
 
         // Ignorar colisiones con otros enemigos o el jefe
         if (other.GetComponentInParent<EnemyHealth>() != null ||
