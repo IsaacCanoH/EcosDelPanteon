@@ -1,5 +1,6 @@
 using System;
 using System.Collections.Generic;
+using Stopwatch = System.Diagnostics.Stopwatch;
 using UnityEngine;
 
 [DefaultExecutionOrder(-200)]
@@ -16,15 +17,55 @@ public class GoblinNavigation2D : MonoBehaviour
 
     private int width, height;
     private Vector2 minimum, probeSize;
-    private bool[] walkable, closed;
-    private float[] cost;
-    private int[] parent;
+    private bool[] walkable;
+    private SearchBuffers immediateSearch;
+    private SearchBuffers queuedSearch;
+    private readonly LinkedList<PathRequest> requests = new LinkedList<PathRequest>();
+    private IEnumerator<int> activeSearch;
+    private const double PathBudgetMs = 1.25;
+
+    internal bool QueueCombatPaths { get; private set; }
     private byte[] testedEdges, clearEdges;
     private ContactFilter2D filter;
 
     private readonly Collider2D[] overlaps = new Collider2D[32];
     private readonly RaycastHit2D[] hits = new RaycastHit2D[32];
-    private readonly SortedSet<Entry> open = new SortedSet<Entry>();
+    internal sealed class PathRequest
+    {
+        internal readonly List<Vector2> Route = new List<Vector2>();
+        internal readonly LinkedListNode<PathRequest> Node;
+        internal Vector2 From;
+        internal Vector2 Target;
+        internal bool Ready;
+
+        internal PathRequest() => Node = new LinkedListNode<PathRequest>(this);
+
+        internal bool Take(List<Vector2> destination)
+        {
+            if (!Ready) return false;
+
+            Ready = false;
+            destination.Clear();
+            destination.AddRange(Route);
+            return true;
+        }
+    }
+
+    private sealed class SearchBuffers
+    {
+        internal readonly bool[] Closed;
+        internal readonly float[] Cost;
+        internal readonly int[] Parent;
+        internal readonly SortedSet<Entry> Open = new SortedSet<Entry>();
+        internal int Closest;
+
+        internal SearchBuffers(int count)
+        {
+            Closed = new bool[count];
+            Cost = new float[count];
+            Parent = new int[count];
+        }
+    }
 
     private static readonly int[] DX =
         { -1, 0, 1, -1, 1, -1, 0, 1 };
@@ -55,7 +96,63 @@ public class GoblinNavigation2D : MonoBehaviour
 
     private void Awake()
     {
+        QueueCombatPaths = gameObject.scene.name == "Cementerio_Nivel4";
         Rebuild();
+    }
+
+    internal bool RequestPath(PathRequest request, Vector2 from, Vector2 target)
+    {
+        if (request.Node.List != null || request.Ready) return false;
+
+        request.From = from;
+        request.Target = target;
+        requests.AddLast(request.Node);
+        return true;
+    }
+
+    internal void CancelPath(PathRequest request)
+    {
+        request.Ready = false;
+        if (request.Node.List != requests) return;
+
+        if (requests.First == request.Node)
+        {
+            activeSearch?.Dispose();
+            activeSearch = null;
+        }
+        requests.Remove(request.Node);
+    }
+
+    private void Update()
+    {
+        if (requests.First == null || Time.timeScale == 0f) return;
+
+        long deadline = Stopwatch.GetTimestamp() + (long)(Stopwatch.Frequency * PathBudgetMs / 1000.0);
+        do
+        {
+            var request = requests.First.Value;
+            if (activeSearch == null)
+            {
+                if (queuedSearch == null) queuedSearch = new SearchBuffers(walkable.Length);
+                activeSearch = Search(request.From, request.Target, request.Route, queuedSearch).GetEnumerator();
+            }
+
+            if (!activeSearch.MoveNext())
+            {
+                activeSearch.Dispose();
+                activeSearch = null;
+                requests.RemoveFirst();
+                request.Ready = true;
+            }
+        }
+        while (requests.First != null && Stopwatch.GetTimestamp() < deadline);
+    }
+
+    private void OnDisable()
+    {
+        activeSearch?.Dispose();
+        activeSearch = null;
+        requests.Clear();
     }
 
     [ContextMenu("Reconstruir navegacion")]
@@ -82,10 +179,12 @@ public class GoblinNavigation2D : MonoBehaviour
 
         int count = width * height;
 
+        activeSearch?.Dispose();
+        activeSearch = null;
+        requests.Clear();
         walkable = new bool[count];
-        closed = new bool[count];
-        cost = new float[count];
-        parent = new int[count];
+        immediateSearch = new SearchBuffers(count);
+        queuedSearch = null;
         testedEdges = new byte[count];
         clearEdges = new byte[count];
 
@@ -147,7 +246,7 @@ public class GoblinNavigation2D : MonoBehaviour
             index / width + 0.5f) * cellSize;
     }
 
-    private int Closest(Vector2 position, bool connectStart)
+    private IEnumerable<int> FindClosest(Vector2 position, bool connectStart, SearchBuffers search)
     {
         int result = -1;
 
@@ -157,6 +256,7 @@ public class GoblinNavigation2D : MonoBehaviour
 
         for (int i = 0; i < walkable.Length; i++)
         {
+            if (i != 0 && (i & 127) == 0) yield return 0;
             if (!walkable[i])
                 continue;
 
@@ -172,7 +272,7 @@ public class GoblinNavigation2D : MonoBehaviour
             result = i;
         }
 
-        return result;
+        search.Closest = result;
     }
 
     private float Estimate(int a, int b)
@@ -211,25 +311,36 @@ public class GoblinNavigation2D : MonoBehaviour
         Vector2 target,
         List<Vector2> path)
     {
-        path.Clear();
-
         if (walkable == null)
             Rebuild();
 
-        int start = Closest(from, true);
-        int goal = Closest(target, false);
+        foreach (int slice in Search(from, target, path, immediateSearch)) { }
+        return path.Count > 0;
+    }
 
-        if (start < 0 || goal < 0)
-            return false;
+    private IEnumerable<int> Search(Vector2 from, Vector2 target, List<Vector2> path, SearchBuffers search)
+    {
+        path.Clear();
+
+        foreach (int slice in FindClosest(from, true, search)) yield return slice;
+        int start = search.Closest;
+        if (start < 0) yield break;
+
+        foreach (int slice in FindClosest(target, false, search)) yield return slice;
+        int goal = search.Closest;
+        if (goal < 0) yield break;
+
+        var open = search.Open;
+        var cost = search.Cost;
+        var parent = search.Parent;
+        var closed = search.Closed;
 
         open.Clear();
-
+        Array.Clear(closed, 0, closed.Length);
         for (int i = 0; i < cost.Length; i++)
-        {
             cost[i] = float.PositiveInfinity;
-            parent[i] = -1;
-            closed[i] = false;
-        }
+
+        parent[start] = -1;
 
         cost[start] = 0f;
         open.Add(new Entry(start, Estimate(start, goal)));
@@ -237,8 +348,15 @@ public class GoblinNavigation2D : MonoBehaviour
         int best = start;
         float bestDistance = (Point(start) - target).sqrMagnitude;
 
+        int expansions = 0;
         while (open.Count > 0)
         {
+            if (++expansions == 9)
+            {
+                expansions = 1;
+                yield return 0;
+            }
+
             Entry entry = open.Min;
             open.Remove(entry);
 
@@ -327,7 +445,6 @@ public class GoblinNavigation2D : MonoBehaviour
             path.Add(target);
         }
 
-        return true;
     }
 
     private void OnDrawGizmosSelected()

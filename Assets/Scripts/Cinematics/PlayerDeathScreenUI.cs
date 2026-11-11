@@ -14,6 +14,7 @@ public class PlayerDeathScreenUI : MonoBehaviour
 
     [Header("Referencias Visuales")]
     public CanvasGroup deathCanvasGroup;
+    [SerializeField] private CanvasGroup authoredBackdrop;
     public Image backdropOverlay;
     public Image cardBackground;
     public TMP_Text titleText;
@@ -28,6 +29,7 @@ public class PlayerDeathScreenUI : MonoBehaviour
     public TMP_FontAsset pixelFont;
 
     private bool isShowing = false;
+    private bool actionTaken;
     private Coroutine fadeRoutine;
 
     // Referencias directas para interacción por ratón a prueba de fallos de EventSystem
@@ -66,7 +68,16 @@ public class PlayerDeathScreenUI : MonoBehaviour
         }
         Instance = this;
 
-        SetupProceduralUIIfMissing();
+        if (authoredBackdrop != null)
+        {
+            retryButton.onClick.AddListener(OnRetryClicked);
+            menuButton.onClick.AddListener(OnMenuClicked);
+            quitButton.onClick.AddListener(OnQuitClicked);
+        }
+        else
+        {
+            SetupProceduralUIIfMissing();
+        }
         HideImmediate();
     }
 
@@ -91,6 +102,8 @@ public class PlayerDeathScreenUI : MonoBehaviour
             return;
         }
 
+        if (authoredBackdrop != null) return;
+
         // Detección directa de ratón por coordenadas de pantalla (100% independiente de EventSystem y módulos UI)
         Vector2 mousePos = Input.mousePosition;
         bool hoverRetry = retryRt != null && RectTransformUtility.RectangleContainsScreenPoint(retryRt, mousePos, null);
@@ -111,7 +124,7 @@ public class PlayerDeathScreenUI : MonoBehaviour
 
     public void Show()
     {
-        if (isShowing) return;
+        if (!isActiveAndEnabled || isShowing) return;
         isShowing = true;
 
         if (deathCanvasGroup == null)
@@ -147,21 +160,40 @@ public class PlayerDeathScreenUI : MonoBehaviour
             deathCanvasGroup.interactable = true;
             deathCanvasGroup.blocksRaycasts = true;
         }
+        if (authoredBackdrop != null)
+        {
+            authoredBackdrop.alpha = 1f;
+            authoredBackdrop.blocksRaycasts = true;
+            if (UnityEngine.EventSystems.EventSystem.current != null)
+                UnityEngine.EventSystems.EventSystem.current.SetSelectedGameObject(retryButton.gameObject);
+        }
     }
 
     public void OnRetryClicked()
     {
+        if (actionTaken) return;
+        actionTaken = true;
         Time.timeScale = 1f;
         AudioListener.pause = false;
         ToyEncounterZone.ResetAllEncounterStatics();
 
         Scene currentScene = SceneManager.GetActiveScene();
         string sceneName = string.IsNullOrEmpty(currentScene.name) ? "Cementerio_Nivel2" : currentScene.name;
+#if UNITY_EDITOR
+        if (!Application.CanStreamedLevelBeLoaded(sceneName) && !string.IsNullOrEmpty(currentScene.path))
+        {
+            UnityEditor.SceneManagement.EditorSceneManager.LoadSceneInPlayMode(
+                currentScene.path, new LoadSceneParameters(LoadSceneMode.Single));
+            return;
+        }
+#endif
         SceneManager.LoadScene(sceneName);
     }
 
     public void OnMenuClicked()
     {
+        if (actionTaken) return;
+        actionTaken = true;
         Time.timeScale = 1f;
         AudioListener.pause = false;
         ToyEncounterZone.ResetAllEncounterStatics();
@@ -172,6 +204,8 @@ public class PlayerDeathScreenUI : MonoBehaviour
 
     public void OnQuitClicked()
     {
+        if (actionTaken) return;
+        actionTaken = true;
         Time.timeScale = 1f;
         AudioListener.pause = false;
         ToyEncounterZone.ResetAllEncounterStatics();
@@ -184,6 +218,11 @@ public class PlayerDeathScreenUI : MonoBehaviour
 
     private void HideImmediate()
     {
+        if (authoredBackdrop != null)
+        {
+            authoredBackdrop.alpha = 0f;
+            authoredBackdrop.blocksRaycasts = false;
+        }
         if (deathCanvasGroup != null)
         {
             deathCanvasGroup.alpha = 0f;

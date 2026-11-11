@@ -24,6 +24,7 @@ public class EncounterWaveManager : MonoBehaviour
 
     [Header("Puntos de Spawn y Concurrencia")]
     public Transform[] spawnPoints;
+    [SerializeField] private bool useFixedSpawnPoints;
     [Range(1, 8)] public int maxSimultaneousEnemies = 4;
     public float spawnInterval = 1.0f;
     public float waveClearDelay = 1.2f;
@@ -31,6 +32,8 @@ public class EncounterWaveManager : MonoBehaviour
     [Header("Audio")]
     public AudioClip waveStartSound;
     public AudioClip waveClearSound;
+    [SerializeField] private AudioSource waveAudio;
+    [SerializeField] private bool limitHealingDrops;
 
     public event Action<int, int> OnWaveStarted;    // (waveIndex, totalWaves)
     public event Action<int> OnWaveCleared;          // (waveIndex)
@@ -41,10 +44,25 @@ public class EncounterWaveManager : MonoBehaviour
     public int ActiveEnemyCount => activeEnemies.Count;
     public int RemainingInCurrentWave => pendingSpawnQueue.Count + activeEnemies.Count;
 
+    private const int SecondWaveIndex = 1;
+    private const int BossReturnEnemyThreshold = 4;
+
+    internal bool CanBossReturn => !IsEncounterActive || CurrentWaveIndex > SecondWaveIndex ||
+        (CurrentWaveIndex == SecondWaveIndex && RemainingInCurrentWave <= BossReturnEnemyThreshold);
+    internal bool RetreatPressureActive => retreatPressure;
+    internal Func<int, Vector3?> ReinforcementSpawnPoint { get; set; }
+
+    private bool retreatPressure;
+    private float nextPressureCharge;
+    private int CurrentEnemyLimit => retreatPressure ? Mathf.Min(8, maxSimultaneousEnemies + 2) : maxSimultaneousEnemies;
+
     private readonly List<EnemyHealth> activeEnemies = new List<EnemyHealth>();
-    private readonly Queue<int> pendingSpawnQueue = new Queue<int>(); // 0 = normal, 1 = chubby, 2 = archer
+    private enum SpawnRole { Normal, Heavy, Archer, LeftFlank, RightFlank }
+    private readonly Queue<SpawnRole> pendingSpawnQueue = new Queue<SpawnRole>();
     private Coroutine encounterRoutine;
     private int spawnedCounterInWave = 0;
+    private static readonly bool[] HealingDropPattern = { true, true, true, false, true };
+    private int healingCandidates;
 
     private static bool IsLevel3Scene()
     {
@@ -53,11 +71,26 @@ public class EncounterWaveManager : MonoBehaviour
                sceneName.IndexOf("Level3", StringComparison.OrdinalIgnoreCase) >= 0;
     }
 
+    internal void SetRetreatPressure(bool active)
+    {
+        retreatPressure = active;
+        nextPressureCharge = Time.time;
+    }
+
+    internal bool TryReserveBowCharge()
+    {
+        if (!retreatPressure && ReinforcementSpawnPoint == null) return true;
+        if (Time.time < nextPressureCharge) return false;
+        nextPressureCharge = Time.time + (retreatPressure ? 0.85f : 1.1f);
+        return true;
+    }
+
     public void StartEncounter()
     {
         if (IsEncounterActive) return;
         IsEncounterActive = true;
         CurrentWaveIndex = -1;
+        healingCandidates = 0;
         encounterRoutine = StartCoroutine(RunEncounterRoutine());
     }
 
@@ -93,41 +126,13 @@ public class EncounterWaveManager : MonoBehaviour
             CurrentWaveIndex = i;
             WaveDefinition currentWave = waves[i];
 
-            if (waveStartSound != null)
-                AudioSource.PlayClipAtPoint(waveStartSound, transform.position, 0.85f);
+            PlayWaveStartSound();
 
             OnWaveStarted?.Invoke(CurrentWaveIndex + 1, waves.Length);
             Debug.Log($"[Encuentro] Iniciando Oleada {CurrentWaveIndex + 1}/{waves.Length} ({currentWave.TotalEnemies} enemigos)");
 
-            // Llenar la cola alternando entre duendes fuertes (1), arqueros (2) y duendes base (0)
             pendingSpawnQueue.Clear();
-            int remChubby = currentWave.chubbyGoblins;
-            int remArcher = currentWave.archerGoblins;
-            int remNormal = currentWave.normalGoblins;
-
-            while (remChubby > 0 || remArcher > 0 || remNormal > 0)
-            {
-                if (remChubby > 0)
-                {
-                    pendingSpawnQueue.Enqueue(1);
-                    remChubby--;
-                }
-                if (remArcher > 0)
-                {
-                    pendingSpawnQueue.Enqueue(2);
-                    remArcher--;
-                }
-                if (remChubby > 0 && remChubby >= remNormal && remChubby >= remArcher)
-                {
-                    pendingSpawnQueue.Enqueue(1);
-                    remChubby--;
-                }
-                if (remNormal > 0)
-                {
-                    pendingSpawnQueue.Enqueue(0);
-                    remNormal--;
-                }
-            }
+            EnqueueWave(currentWave);
 
             // Spawneo progresivo según concurrencia
             while (pendingSpawnQueue.Count > 0 || activeEnemies.Count > 0)
@@ -135,11 +140,11 @@ public class EncounterWaveManager : MonoBehaviour
                 // Limpiar referencias muertas
                 activeEnemies.RemoveAll(e => e == null || e.IsDead);
 
-                while (activeEnemies.Count < maxSimultaneousEnemies && pendingSpawnQueue.Count > 0)
+                while (activeEnemies.Count < CurrentEnemyLimit && pendingSpawnQueue.Count > 0)
                 {
-                    int enemyType = pendingSpawnQueue.Dequeue();
+                    SpawnRole enemyType = pendingSpawnQueue.Dequeue();
                     SpawnEnemy(enemyType);
-                    yield return new WaitForSeconds(spawnInterval);
+                    yield return new WaitForSeconds(retreatPressure ? spawnInterval * 0.7f : spawnInterval);
                 }
 
                 yield return new WaitForSeconds(0.3f);
@@ -163,11 +168,73 @@ public class EncounterWaveManager : MonoBehaviour
         OnAllWavesCleared?.Invoke();
     }
 
-    private void SpawnEnemy(int enemyType)
+    internal void AddReinforcements(WaveDefinition wave)
     {
-        bool isChubby = enemyType == 1;
-        bool isArcher = enemyType == 2;
-        Vector3 spawnPos = GetRandomVariedSpawnPosition();
+        if (IsEncounterActive)
+        {
+            if (waveAudio != null) PlayWaveStartSound();
+            EnqueueWave(wave);
+            return;
+        }
+
+        waves = new[] { wave };
+        StartEncounter();
+    }
+
+    private void PlayWaveStartSound()
+    {
+        if (waveStartSound == null) return;
+
+        if (waveAudio != null)
+            waveAudio.PlayOneShot(waveStartSound, 0.85f);
+        else
+            AudioSource.PlayClipAtPoint(waveStartSound, transform.position, 0.85f);
+    }
+
+    private void EnqueueWave(WaveDefinition wave)
+    {
+        int remChubby = wave.chubbyGoblins;
+        int remArcher = wave.archerGoblins;
+        int remNormal = wave.normalGoblins;
+
+        if (ReinforcementSpawnPoint != null && remNormal >= 2)
+        {
+            pendingSpawnQueue.Enqueue(SpawnRole.LeftFlank);
+            pendingSpawnQueue.Enqueue(SpawnRole.RightFlank);
+            remNormal -= 2;
+        }
+
+        while (remChubby > 0 || remArcher > 0 || remNormal > 0)
+        {
+            if (remChubby > 0)
+            {
+                pendingSpawnQueue.Enqueue(SpawnRole.Heavy);
+                remChubby--;
+            }
+            if (remArcher > 0)
+            {
+                pendingSpawnQueue.Enqueue(SpawnRole.Archer);
+                remArcher--;
+            }
+            if (remChubby > 0 && remChubby >= remNormal && remChubby >= remArcher)
+            {
+                pendingSpawnQueue.Enqueue(SpawnRole.Heavy);
+                remChubby--;
+            }
+            if (remNormal > 0)
+            {
+                pendingSpawnQueue.Enqueue(SpawnRole.Normal);
+                remNormal--;
+            }
+        }
+    }
+
+    private void SpawnEnemy(SpawnRole role)
+    {
+        bool isChubby = role == SpawnRole.Heavy;
+        bool isArcher = role == SpawnRole.Archer;
+        int flank = role == SpawnRole.LeftFlank ? -1 : role == SpawnRole.RightFlank ? 1 : 0;
+        Vector3 spawnPos = ReinforcementSpawnPoint?.Invoke(flank) ?? GetRandomVariedSpawnPosition();
 
         GameObject enemyObj;
         if (goblinPrefab != null)
@@ -203,6 +270,12 @@ public class EncounterWaveManager : MonoBehaviour
         spawnedCounterInWave++;
         bool hasGreenAura = IsLevel3Scene() && ((spawnedCounterInWave % 2 == 0) || (CurrentWaveIndex >= 1 && spawnedCounterInWave % 3 == 0));
         variant.SetVariant(isChubby, isArcher, hasGreenAura);
+        if (limitHealingDrops)
+        {
+            bool canDropHealing = isChubby || isArcher;
+            health.EncounterHealingDrop = canDropHealing &&
+                HealingDropPattern[healingCandidates++ % HealingDropPattern.Length];
+        }
 
         GoblinAI ai = enemyObj.GetComponent<GoblinAI>();
         if (ai != null)
@@ -254,6 +327,18 @@ public class EncounterWaveManager : MonoBehaviour
 
     private Vector3 GetRandomVariedSpawnPosition()
     {
+        if (useFixedSpawnPoints && spawnPoints != null && spawnPoints.Length > 0)
+        {
+            var player = PlayerHealth.ActiveInstance;
+            for (int offset = 0; offset < spawnPoints.Length; offset++)
+            {
+                Transform point = spawnPoints[(spawnedCounterInWave + offset) % spawnPoints.Length];
+                if (point != null && (player == null || Vector2.Distance(player.transform.position, point.position) >= 2f))
+                    return point.position;
+            }
+            return spawnPoints[spawnedCounterInWave % spawnPoints.Length].position;
+        }
+
         Vector3 basePos = transform.position;
         if (spawnPoints != null && spawnPoints.Length > 0)
         {

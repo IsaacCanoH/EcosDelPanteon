@@ -13,7 +13,8 @@ public class SpectralChildBossAI : MonoBehaviour
         Attacking,
         Overcharging,
         Recovering,
-        Dying
+        Dying,
+        Retreating
     }
 
     [Header("Estadísticas de Combate")]
@@ -63,6 +64,8 @@ public class SpectralChildBossAI : MonoBehaviour
 
     public BossState CurrentState { get; private set; } = BossState.Spawning;
     public event Action<Vector3> OnDeathCinematicFinished;
+    internal event Action<bool> OnRetreatChanged;
+    private bool retreatUsed;
 
     private static Sprite softGlowSprite;
     private static Sprite[] cachedWitchSprites; // 0..3 = Idle/Flotando, 4..7 = Canalizando/Atacando
@@ -109,6 +112,9 @@ public class SpectralChildBossAI : MonoBehaviour
     private AudioSource audioSource;
     private Transform playerTransform;
     private PlayerHealth playerHealth;
+    private Level4BossNavigation encounterNavigation;
+    private bool approachingFromStatue;
+    internal bool OwnsEncounterDeath => encounterNavigation != null;
 
     private Vector2 altarOrigin;
     private float nextAttackTime;
@@ -127,6 +133,7 @@ public class SpectralChildBossAI : MonoBehaviour
     private void Awake()
     {
         health = GetComponent<EnemyHealth>();
+        encounterNavigation = GetComponent<Level4BossNavigation>();
         rb = GetComponent<Rigidbody2D>();
         bodyCollider = GetComponent<Collider2D>();
         animator = GetComponent<Animator>();
@@ -188,6 +195,8 @@ public class SpectralChildBossAI : MonoBehaviour
                 visualRenderer.color = Color.white;
             }
             SetupWitchMysticAura();
+            if (encounterNavigation != null && visualRenderer != null && witchAuraRenderer != null)
+                witchAuraRenderer.sharedMaterial = visualRenderer.sharedMaterial;
 
             // Sonidos exclusivos de ataque, sobrecarga, teletransporte y música de combate para La Bruja
             projectileClip = GetOrCreateWitchProjectileClip();
@@ -213,6 +222,12 @@ public class SpectralChildBossAI : MonoBehaviour
         // Si existe GhostChildAI residual, desactivarlo
         var oldAi = GetComponent<GhostChildAI>();
         if (oldAi != null) oldAi.enabled = false;
+
+        if (encounterNavigation != null)
+        {
+            bodyCollider.enabled = false;
+            health.enabled = false;
+        }
     }
 
     private void SetupWitchMysticAura()
@@ -235,6 +250,20 @@ public class SpectralChildBossAI : MonoBehaviour
         witchAuraRenderer.color = new Color(0.62f, 0.14f, 0.88f, 0.42f);
     }
 
+    private void PlayBossEffect(AudioClip clip, float volume)
+    {
+        if (audioSource == null || clip == null) return;
+
+        // La sobrecarga del Niño viene grabada con más ganancia que sus demás efectos.
+        if (encounterNavigation != null)
+        {
+            if (isWitchBoss) volume *= 0.62f;
+            else volume *= clip == overchargeClip ? 0.18f : 0.42f;
+        }
+
+        audioSource.PlayOneShot(clip, volume * AudioManager.EnemyVolume);
+    }
+
     private void LoadAudioClips()
     {
 #if UNITY_EDITOR
@@ -251,6 +280,8 @@ public class SpectralChildBossAI : MonoBehaviour
 
     private void Start()
     {
+        if (encounterNavigation != null) return;
+
         // Anclar punto de origen en el tercer altar y garantizar posición libre de tumbas/obstáculos
         altarOrigin = transform.position;
         foreach (var zone in FindObjectsOfType<ToyEncounterZone>())
@@ -293,6 +324,29 @@ public class SpectralChildBossAI : MonoBehaviour
         nextMinionSpawnTime = Time.time + 9.0f;
         nextTeleportTime = Time.time + teleportInterval;
         StartCoroutine(SpawnIntroRoutine());
+    }
+
+    public void BeginEncounterCombat(PlayerHealth target, GoblinNavigation2D navigation, Transform minionParent,
+        Sprite projectileSprite, bool approachFromStatue = false)
+    {
+        if (encounterNavigation == null || CurrentState != BossState.Spawning) return;
+        playerHealth = target;
+        playerTransform = target.transform;
+        bodyCollider.enabled = true;
+        health.enabled = true;
+        approachingFromStatue = approachFromStatue;
+        encounterNavigation.Begin(target, navigation, minionParent, projectileSprite, !approachFromStatue);
+        altarOrigin = rb.position;
+
+        if (visualRenderer != null) visualRenderer.color = normalAuraColor;
+        if (audioSource != null && laughClip != null)
+            PlayBossEffect(laughClip, 0.85f);
+
+        CurrentState = BossState.Hovering;
+        nextAttackTime = Time.time + 1.2f;
+        nextMinionSpawnTime = Time.time + 9f;
+        nextTeleportTime = Time.time + teleportInterval;
+        StartBossBattleMusic();
     }
 
     public Vector2 FindClearPosition(Vector2 desiredPos)
@@ -378,7 +432,7 @@ public class SpectralChildBossAI : MonoBehaviour
         if (bodyCollider != null) bodyCollider.enabled = false;
 
         if (audioSource != null && laughClip != null)
-            audioSource.PlayOneShot(laughClip, 0.85f * AudioManager.EnemyVolume);
+            PlayBossEffect(laughClip, 0.85f);
 
         float t = 0f;
         while (t < 1.0f)
@@ -397,14 +451,35 @@ public class SpectralChildBossAI : MonoBehaviour
 
     private void Update()
     {
-        if (CurrentState == BossState.Spawning || CurrentState == BossState.Dying)
+        if (CurrentState == BossState.Spawning || CurrentState == BossState.Dying ||
+            CurrentState == BossState.Retreating)
             return;
+
+        if (encounterNavigation != null && (isTeleporting || (playerHealth != null && playerHealth.IsDead)))
+        {
+            encounterNavigation.Stop();
+            return;
+        }
 
         if (playerTransform == null)
         {
             GameObject p = GameObject.FindGameObjectWithTag("Player");
             if (p != null) playerTransform = p.transform;
             return;
+        }
+
+        if (approachingFromStatue)
+        {
+            if (!encounterNavigation.IsInAttackRange(6f))
+            {
+                UpdateNormalMovement();
+                return;
+            }
+
+            approachingFromStatue = false;
+            nextAttackTime = Time.time + 0.45f;
+            nextMinionSpawnTime = Time.time + 9f;
+            nextTeleportTime = Time.time + teleportInterval;
         }
 
         // Invocación periódica de refuerzos durante la batalla
@@ -492,22 +567,28 @@ public class SpectralChildBossAI : MonoBehaviour
             moveDir = tangent * 0.82f;
         }
 
-        float step = baseMoveSpeed * Time.deltaTime;
-        moveDir = AdjustDirectionForObstacles(currentPos, moveDir, step);
-        Vector2 targetPos = currentPos + moveDir * step;
-
-        float distFromAltar = Vector2.Distance(targetPos, altarOrigin);
-        if (distFromAltar > maxAltarLeash)
+        if (encounterNavigation != null)
         {
-            Vector2 toAltar = (altarOrigin - currentPos).normalized;
-            toAltar = AdjustDirectionForObstacles(currentPos, toAltar, step);
-            targetPos = currentPos + toAltar * (baseMoveSpeed * 1.1f * Time.deltaTime);
+            encounterNavigation.SetMovement(moveDir, baseMoveSpeed, idealDistanceMax);
         }
+        else
+        {
+            float step = baseMoveSpeed * Time.deltaTime;
+            moveDir = AdjustDirectionForObstacles(currentPos, moveDir, step);
+            Vector2 targetPos = currentPos + moveDir * step;
 
-        targetPos.x = Mathf.Clamp(targetPos.x, MinMapX, MaxMapX);
-        targetPos.y = Mathf.Clamp(targetPos.y, MinMapY, MaxMapY);
+            float distFromAltar = Vector2.Distance(targetPos, altarOrigin);
+            if (distFromAltar > maxAltarLeash)
+            {
+                Vector2 toAltar = (altarOrigin - currentPos).normalized;
+                toAltar = AdjustDirectionForObstacles(currentPos, toAltar, step);
+                targetPos = currentPos + toAltar * (baseMoveSpeed * 1.1f * Time.deltaTime);
+            }
 
-        rb.MovePosition(targetPos);
+            targetPos.x = Mathf.Clamp(targetPos.x, MinMapX, MaxMapX);
+            targetPos.y = Mathf.Clamp(targetPos.y, MinMapY, MaxMapY);
+            rb.MovePosition(targetPos);
+        }
 
         if (animator != null && animator.enabled)
         {
@@ -524,7 +605,7 @@ public class SpectralChildBossAI : MonoBehaviour
                 if (Time.time >= nextStepSoundTime && audioSource != null && stepClip != null)
                 {
                     nextStepSoundTime = Time.time + 0.48f;
-                    audioSource.PlayOneShot(stepClip, 0.35f * AudioManager.EnemyVolume);
+                    PlayBossEffect(stepClip, 0.35f);
                 }
             }
         }
@@ -563,7 +644,13 @@ public class SpectralChildBossAI : MonoBehaviour
 
     private void HandleDamageTaken(int _)
     {
-        if (isInOvercharge || CurrentState == BossState.Dying) return;
+        if (encounterNavigation != null && !retreatUsed && health.currentHealth > 0 &&
+            health.currentHealth * 2 <= health.maxHealth)
+        {
+            StartCoroutine(RetreatRoutine());
+            return;
+        }
+        if (isInOvercharge || CurrentState == BossState.Dying || CurrentState == BossState.Retreating) return;
 
         if (isWitchBoss)
         {
@@ -588,6 +675,81 @@ public class SpectralChildBossAI : MonoBehaviour
         }
     }
 
+    private IEnumerator RetreatRoutine()
+    {
+        retreatUsed = true;
+        isInOvercharge = false;
+        witchCastAnimUntil = 0f;
+        CurrentState = BossState.Retreating;
+        encounterNavigation.Stop();
+        bodyCollider.enabled = false;
+        health.enabled = false;
+        OnRetreatChanged?.Invoke(true);
+
+        if (animator != null && animator.enabled)
+        {
+            animator.SetBool("IsMoving", false);
+            animator.SetInteger("ActionState", 0);
+        }
+
+        yield return AnimateRetreat(false);
+        var light = GetComponent<UnityEngine.Rendering.Universal.Light2D>();
+        bool restoreLight = light != null && light.enabled;
+        if (restoreLight) light.enabled = false;
+        if (witchAuraRenderer != null) witchAuraRenderer.enabled = false;
+        visualRenderer.enabled = false;
+
+        yield return new WaitForSeconds(0.25f);
+        var waves = encounterNavigation.MinionParent.GetComponent<EncounterWaveManager>();
+        while (waves != null && !waves.CanBossReturn)
+            yield return null;
+
+        encounterNavigation.ReturnNearPlayer();
+        var warning = Level4SpiritEffects.CreateVisual("Aviso_Reaparicion_Jefe", Level4SpiritEffects.Ring, 10, transform);
+        warning.transform.position = transform.position + Vector3.up * 0.16f;
+        warning.sharedMaterial = visualRenderer.sharedMaterial;
+        yield return Level4SpiritEffects.PulseRing(warning, 0.32f, Color.white);
+
+        visualRenderer.color = new Color(normalAuraColor.r, normalAuraColor.g, normalAuraColor.b, 0f);
+        visualRenderer.enabled = true;
+        if (restoreLight) light.enabled = true;
+        yield return AnimateRetreat(true);
+
+        visualRenderer.color = normalAuraColor;
+        if (witchAuraRenderer != null) witchAuraRenderer.enabled = true;
+        bodyCollider.enabled = true;
+        health.enabled = true;
+        OnRetreatChanged?.Invoke(false);
+
+        if (animator != null && animator.enabled) animator.SetBool("IsMoving", true);
+        yield return encounterNavigation.BackstepFromPlayer();
+        if (animator != null && animator.enabled) animator.SetBool("IsMoving", false);
+
+        CurrentState = BossState.Hovering;
+        nextAttackTime = Time.time + 0.65f;
+        nextTeleportTime = Time.time + teleportInterval;
+        HandleDamageTaken(0);
+    }
+
+    private IEnumerator AnimateRetreat(bool appearing)
+    {
+        if (!isWitchBoss)
+        {
+            yield return Level4SpiritEffects.AnimateChild(visualRenderer, transform, appearing ? 0.42f : 0.22f, appearing);
+            yield break;
+        }
+
+        SpawnTeleportRuneBurst(transform.position);
+        float duration = appearing ? 0.3f : 0.22f;
+        float startAlpha = visualRenderer.color.a;
+        for (float elapsed = 0f; elapsed < duration; elapsed += Time.deltaTime)
+        {
+            float progress = Mathf.Clamp01(elapsed / duration);
+            visualRenderer.color = new Color(0.85f, 0.35f, 1f, appearing ? progress : Mathf.Lerp(startAlpha, 0f, progress));
+            yield return null;
+        }
+    }
+
     private void TriggerOvercharge(float duration = 5.0f)
     {
         isInOvercharge = true;
@@ -603,8 +765,8 @@ public class SpectralChildBossAI : MonoBehaviour
 
         if (audioSource != null)
         {
-            if (laughClip != null) audioSource.PlayOneShot(laughClip, 0.95f * AudioManager.EnemyVolume);
-            if (overchargeClip != null) audioSource.PlayOneShot(overchargeClip, 0.9f * AudioManager.EnemyVolume);
+            if (laughClip != null) PlayBossEffect(laughClip, 0.95f);
+            if (overchargeClip != null) PlayBossEffect(overchargeClip, 0.9f);
         }
 
         StartCoroutine(OverchargeRoutine(duration));
@@ -623,20 +785,26 @@ public class SpectralChildBossAI : MonoBehaviour
         float orbitSign = Mathf.Sin(Time.time * 2.2f);
         Vector2 moveDir = (tangent * orbitSign * 0.75f + (dist > 3.0f ? dirToPlayer * 0.45f : (dist < 1.8f ? -dirToPlayer * 0.45f : Vector2.zero))).normalized;
 
-        float step = overchargeSpeed * Time.deltaTime;
-        moveDir = AdjustDirectionForObstacles(currentPos, moveDir, step);
-        Vector2 targetPos = currentPos + moveDir * step;
-
-        if (Vector2.Distance(targetPos, altarOrigin) > maxAltarLeash)
+        if (encounterNavigation != null)
         {
-            Vector2 toAltar = AdjustDirectionForObstacles(currentPos, (altarOrigin - currentPos).normalized, step);
-            targetPos = currentPos + toAltar * step;
+            encounterNavigation.SetMovement(moveDir, overchargeSpeed, 3f);
         }
+        else
+        {
+            float step = overchargeSpeed * Time.deltaTime;
+            moveDir = AdjustDirectionForObstacles(currentPos, moveDir, step);
+            Vector2 targetPos = currentPos + moveDir * step;
 
-        targetPos.x = Mathf.Clamp(targetPos.x, MinMapX, MaxMapX);
-        targetPos.y = Mathf.Clamp(targetPos.y, MinMapY, MaxMapY);
+            if (Vector2.Distance(targetPos, altarOrigin) > maxAltarLeash)
+            {
+                Vector2 toAltar = AdjustDirectionForObstacles(currentPos, (altarOrigin - currentPos).normalized, step);
+                targetPos = currentPos + toAltar * step;
+            }
 
-        rb.MovePosition(targetPos);
+            targetPos.x = Mathf.Clamp(targetPos.x, MinMapX, MaxMapX);
+            targetPos.y = Mathf.Clamp(targetPos.y, MinMapY, MaxMapY);
+            rb.MovePosition(targetPos);
+        }
 
         if (animator != null && animator.enabled)
         {
@@ -659,7 +827,7 @@ public class SpectralChildBossAI : MonoBehaviour
         float volleyInterval = 0.95f;
         float nextVolleyTime = Time.time;
 
-        while (Time.time < overchargeEndTime && health.currentHealth > 0)
+        while (Time.time < overchargeEndTime && health.currentHealth > 0 && CurrentState != BossState.Retreating)
         {
             if (Time.time >= nextVolleyTime && playerTransform != null)
             {
@@ -668,6 +836,8 @@ public class SpectralChildBossAI : MonoBehaviour
             }
             yield return null;
         }
+
+        if (CurrentState == BossState.Retreating) yield break;
 
         isInOvercharge = false;
         CurrentState = BossState.Recovering;
@@ -683,6 +853,7 @@ public class SpectralChildBossAI : MonoBehaviour
         TrySpawnBattleMinions();
 
         yield return new WaitForSeconds(0.75f);
+        if (CurrentState == BossState.Retreating) yield break;
 
         CurrentState = BossState.Hovering;
         nextAttackTime = Time.time + 1.0f;
@@ -746,13 +917,14 @@ public class SpectralChildBossAI : MonoBehaviour
     {
         if (isTeleporting || CurrentState == BossState.Dying) yield break;
         isTeleporting = true;
+        if (encounterNavigation != null) encounterNavigation.Stop();
 
         Vector3 oldPos = transform.position;
         SpawnTeleportRuneBurst(oldPos);
 
         if (audioSource != null && laughClip != null)
         {
-            audioSource.PlayOneShot(laughClip, 0.65f * AudioManager.EnemyVolume);
+            PlayBossEffect(laughClip, 0.65f);
         }
 
         // Desvanecimiento suave de teletransporte
@@ -761,6 +933,13 @@ public class SpectralChildBossAI : MonoBehaviour
         Vector3 origScale = transform.localScale;
         while (t < vanishTime)
         {
+            if (CurrentState == BossState.Retreating)
+            {
+                transform.localScale = origScale;
+                isTeleporting = false;
+                yield break;
+            }
+
             t += Time.deltaTime;
             float p = Mathf.Clamp01(t / vanishTime);
             transform.localScale = new Vector3(Mathf.Lerp(origScale.x, 0.25f, p), Mathf.Lerp(origScale.y, 1.32f, p), 1f);
@@ -780,16 +959,22 @@ public class SpectralChildBossAI : MonoBehaviour
             float stepDist = UnityEngine.Random.Range(1.6f, 2.65f);
             Vector2 candidate = (Vector2)oldPos + new Vector2(Mathf.Cos(angle) * stepDist, Mathf.Sin(angle) * stepDist);
 
-            if (Vector2.Distance(candidate, altarOrigin) > maxAltarLeash * 0.9f)
+            if (encounterNavigation == null)
             {
-                Vector2 toAltar = (altarOrigin - (Vector2)oldPos).normalized;
-                candidate = (Vector2)oldPos + toAltar * stepDist;
+                if (Vector2.Distance(candidate, altarOrigin) > maxAltarLeash * 0.9f)
+                {
+                    Vector2 toAltar = (altarOrigin - (Vector2)oldPos).normalized;
+                    candidate = (Vector2)oldPos + toAltar * stepDist;
+                }
+
+                candidate.x = Mathf.Clamp(candidate.x, MinMapX, MaxMapX);
+                candidate.y = Mathf.Clamp(candidate.y, MinMapY, MaxMapY);
             }
 
-            candidate.x = Mathf.Clamp(candidate.x, MinMapX, MaxMapX);
-            candidate.y = Mathf.Clamp(candidate.y, MinMapY, MaxMapY);
-
-            if (!IsPositionBlocked(candidate, 0.58f) &&
+            bool clear = encounterNavigation != null
+                ? encounterNavigation.CanStandAt(candidate)
+                : !IsPositionBlocked(candidate, 0.58f);
+            if (clear &&
                 Vector2.Distance(candidate, playerPos) >= 2.0f &&
                 Vector2.Distance(candidate, oldPos) >= 1.2f)
             {
@@ -798,7 +983,7 @@ public class SpectralChildBossAI : MonoBehaviour
             }
         }
 
-        bestTarget = FindClearPosition(bestTarget);
+        if (encounterNavigation == null) bestTarget = FindClearPosition(bestTarget);
         transform.position = bestTarget;
         if (rb != null) rb.position = bestTarget;
 
@@ -809,6 +994,13 @@ public class SpectralChildBossAI : MonoBehaviour
         t = 0f;
         while (t < appearTime)
         {
+            if (CurrentState == BossState.Retreating)
+            {
+                transform.localScale = origScale;
+                isTeleporting = false;
+                yield break;
+            }
+
             t += Time.deltaTime;
             float p = Mathf.Clamp01(t / appearTime);
             transform.localScale = new Vector3(Mathf.Lerp(0.25f, origScale.x, p), Mathf.Lerp(1.32f, origScale.y, p), 1f);
@@ -846,6 +1038,8 @@ public class SpectralChildBossAI : MonoBehaviour
         ringObj.transform.position = pos + new Vector3(0f, 0.35f, 0f);
         SpriteRenderer ringSr = ringObj.AddComponent<SpriteRenderer>();
         ringSr.sprite = GetOrCreateSoftGlowSprite();
+        if (encounterNavigation != null && visualRenderer != null)
+            ringSr.sharedMaterial = visualRenderer.sharedMaterial;
         ringSr.sortingLayerName = "Layer 1";
         ringSr.sortingOrder = 2;
         ringSr.color = new Color(0.82f, 0.25f, 1.0f, 0.9f);
@@ -899,14 +1093,24 @@ public class SpectralChildBossAI : MonoBehaviour
         }
         if (pf == null) return;
 
-        float angle = UnityEngine.Random.Range(0f, 360f) * Mathf.Deg2Rad;
-        float dist = UnityEngine.Random.Range(2.8f, 4.5f);
-        Vector2 candidate = (Vector2)transform.position + new Vector2(Mathf.Cos(angle) * dist, Mathf.Sin(angle) * dist);
-        candidate.x = Mathf.Clamp(candidate.x, MinMapX, MaxMapX);
-        candidate.y = Mathf.Clamp(candidate.y, MinMapY, MaxMapY);
-        Vector2 spawnPos = FindClearPosition(candidate);
+        Vector2 spawnPos;
+        Transform minionParent = null;
+        if (encounterNavigation != null)
+        {
+            if (!encounterNavigation.TryFindMinionSpawn(transform.position, out spawnPos)) return;
+            minionParent = encounterNavigation.MinionParent;
+        }
+        else
+        {
+            float angle = UnityEngine.Random.Range(0f, 360f) * Mathf.Deg2Rad;
+            float dist = UnityEngine.Random.Range(2.8f, 4.5f);
+            Vector2 candidate = (Vector2)transform.position + new Vector2(Mathf.Cos(angle) * dist, Mathf.Sin(angle) * dist);
+            candidate.x = Mathf.Clamp(candidate.x, MinMapX, MaxMapX);
+            candidate.y = Mathf.Clamp(candidate.y, MinMapY, MaxMapY);
+            spawnPos = FindClearPosition(candidate);
+        }
 
-        GameObject minionObj = Instantiate(pf, spawnPos, Quaternion.identity);
+        GameObject minionObj = Instantiate(pf, spawnPos, Quaternion.identity, minionParent);
         EnemyHealth eh = minionObj.GetComponent<EnemyHealth>();
         if (eh == null) eh = minionObj.AddComponent<EnemyHealth>();
 
@@ -1007,7 +1211,8 @@ public class SpectralChildBossAI : MonoBehaviour
     {
         for (int i = 0; i < wavesCount; i++)
         {
-            if (health == null || health.currentHealth <= 0 || playerTransform == null) yield break;
+            if (health == null || health.currentHealth <= 0 || playerTransform == null || CurrentState == BossState.Retreating)
+                yield break;
             SpawnTripleSpread();
             yield return new WaitForSeconds(waveInterval);
         }
@@ -1017,7 +1222,8 @@ public class SpectralChildBossAI : MonoBehaviour
     {
         for (int i = 0; i < shots; i++)
         {
-            if (health == null || health.currentHealth <= 0 || playerTransform == null) yield break;
+            if (health == null || health.currentHealth <= 0 || playerTransform == null || CurrentState == BossState.Retreating)
+                yield break;
             Vector2 baseDir = (playerTransform.position - transform.position).normalized;
             float spreadAngle = Mathf.Sin(i * 1.35f) * 16f;
             Vector2 shotDir = Quaternion.Euler(0f, 0f, spreadAngle) * baseDir;
@@ -1043,13 +1249,14 @@ public class SpectralChildBossAI : MonoBehaviour
         if (audioSource != null && projectileClip != null)
         {
             audioSource.pitch = isWitchBoss ? UnityEngine.Random.Range(0.92f, 1.08f) : 1.0f;
-            audioSource.PlayOneShot(projectileClip, (isWitchBoss ? 0.90f : 0.85f) * AudioManager.EnemyVolume);
+            PlayBossEffect(projectileClip, (isWitchBoss ? 0.90f : 0.85f));
         }
     }
 
     private IEnumerator ResetAttackStateRoutine(float delay)
     {
         yield return new WaitForSeconds(delay);
+        if (CurrentState == BossState.Retreating) yield break;
         if (animator != null && animator.enabled) animator.SetInteger("ActionState", 0);
         if (CurrentState == BossState.Attacking)
             CurrentState = BossState.Hovering;
@@ -1092,7 +1299,8 @@ public class SpectralChildBossAI : MonoBehaviour
     {
         for (int i = 0; i < shots; i++)
         {
-            if (health.currentHealth <= 0 || playerTransform == null) yield break;
+            if (health.currentHealth <= 0 || playerTransform == null || CurrentState == BossState.Retreating)
+                yield break;
             Vector2 dir = (playerTransform.position - transform.position).normalized;
             PlayAttackAnimationAndSound(dir);
             CreateProjectile(transform.position + (Vector3)dir * 0.45f, dir, 6.0f, projectileDamage);
@@ -1113,12 +1321,20 @@ public class SpectralChildBossAI : MonoBehaviour
             projObj.transform.position = pos;
         }
 
+        if (encounterNavigation != null)
+            projObj.transform.SetParent(encounterNavigation.MinionParent, true);
+
         SpectralProjectile proj = projObj.GetComponent<SpectralProjectile>();
         if (proj == null) proj = projObj.AddComponent<SpectralProjectile>();
         if (isWitchBoss)
         {
             proj.ConfigurePurpleOrb();
         }
+        else if (encounterNavigation != null)
+        {
+            proj.GetComponent<SpriteRenderer>().sprite = encounterNavigation.ProjectileSprite;
+        }
+        proj.CanBeDispelledByLantern = encounterNavigation != null;
         proj.Launch(direction, speed, damage);
     }
 
@@ -1136,6 +1352,11 @@ public class SpectralChildBossAI : MonoBehaviour
         if (CurrentState == BossState.Dying) return;
         CurrentState = BossState.Dying;
         StopAllCoroutines();
+        if (encounterNavigation != null)
+        {
+            encounterNavigation.Stop();
+            rb.simulated = false;
+        }
 
         // Limpiar esbirros invocados activos para que no interrumpan la cinemática
         foreach (var minion in activeMinions)
@@ -1148,7 +1369,10 @@ public class SpectralChildBossAI : MonoBehaviour
         activeMinions.Clear();
 
         // Eliminar proyectiles espectrales en vuelo
-        foreach (var proj in FindObjectsOfType<SpectralProjectile>())
+        var projectiles = encounterNavigation != null
+            ? encounterNavigation.MinionParent.GetComponentsInChildren<SpectralProjectile>()
+            : FindObjectsOfType<SpectralProjectile>();
+        foreach (var proj in projectiles)
         {
             if (proj != null) Destroy(proj.gameObject);
         }
@@ -1169,8 +1393,8 @@ public class SpectralChildBossAI : MonoBehaviour
 
         if (audioSource != null)
         {
-            if (overchargeClip != null) audioSource.PlayOneShot(overchargeClip, 0.9f * AudioManager.EnemyVolume);
-            if (laughClip != null) audioSource.PlayOneShot(laughClip, 0.75f * AudioManager.EnemyVolume);
+            if (overchargeClip != null) PlayBossEffect(overchargeClip, 0.9f);
+            if (laughClip != null) PlayBossEffect(laughClip, 0.75f);
         }
 
         Vector3 startPos = transform.position;

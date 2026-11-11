@@ -75,11 +75,13 @@ public class GoblinAI : MonoBehaviour
     public static IReadOnlyList<GoblinAI> ActiveAgents => agents;
 
     private readonly List<Vector2> path = new List<Vector2>();
+    private GoblinNavigation2D.PathRequest pathRequest;
 
     private Rigidbody2D rb;
     private Animator animator;
     private BoxCollider2D body;
     private GoblinNavigation2D navigation;
+    private EncounterWaveManager encounter;
 
     private Transform player;
     private Collider2D playerBody;
@@ -139,6 +141,7 @@ public class GoblinAI : MonoBehaviour
         rb.velocity = Vector2.zero;
         rb.angularVelocity = 0f;
         rb.constraints = RigidbodyConstraints2D.FreezeAll;
+        if (pathRequest != null) navigation.CancelPath(pathRequest);
         path.Clear();
         recoveryUntil = nextRepath = 0f;
         animator.SetBool("IsMoving", false);
@@ -206,10 +209,23 @@ public class GoblinAI : MonoBehaviour
         get
         {
             if (enablePatrol && !IsAlerted) return patrolSpeed;
-            return increaseSpeedAfterSecondCoin && coinCollector != null &&
+            float speed = increaseSpeedAfterSecondCoin && coinCollector != null &&
                 coinCollector.collectedCoins >= 2 ? secondCoinSpeed : moveSpeed;
+            return HasMeleePressure ? speed * 1.22f : speed;
         }
     }
+
+    private bool HasMeleePressure
+    {
+        get
+        {
+            if (encounter == null || !encounter.RetreatPressureActive) return false;
+            var archer = GetComponent<GoblinArcherController>();
+            return archer == null || archer.IsInMeleeMode;
+        }
+    }
+
+    private float CurrentAttackCooldown => HasMeleePressure ? attackCooldown * 0.8f : attackCooldown;
 
     // Permite alertar a un solo duende al incorporar las piedras.
     public void Alert()
@@ -237,6 +253,7 @@ public class GoblinAI : MonoBehaviour
         rb = GetComponent<Rigidbody2D>();
         animator = GetComponent<Animator>();
         body = GetComponent<BoxCollider2D>();
+        encounter = GetComponentInParent<EncounterWaveManager>();
 
         lastPosition = checkPosition = rb.position;
         homePosition = movementGoal = rb.position;
@@ -274,7 +291,10 @@ public class GoblinAI : MonoBehaviour
         navigation = FindObjectOfType<GoblinNavigation2D>();
 
         if (navigation != null)
+        {
+            if (navigation.QueueCombatPaths) pathRequest = new GoblinNavigation2D.PathRequest();
             return;
+        }
 
         Debug.LogError(
             "Falta el objeto Navigation con GoblinNavigation2D.",
@@ -443,6 +463,7 @@ public class GoblinAI : MonoBehaviour
         recoveryUntil = 0f;
         lastCheck = Time.time;
         checkPosition = rb.position;
+        if (pathRequest != null) navigation.CancelPath(pathRequest);
         path.Clear();
         waypoint = 0;
         if (next == AwarenessState.Patrol)
@@ -553,6 +574,7 @@ public class GoblinAI : MonoBehaviour
         if (!navigationRequested || isAttacking ||
             player == null || navigation == null)
         {
+            if (pathRequest != null && navigation != null) navigation.CancelPath(pathRequest);
             rb.velocity = Vector2.zero;
             checkPosition = rb.position;
             lastCheck = Time.time;
@@ -611,50 +633,20 @@ public class GoblinAI : MonoBehaviour
         }
         else
         {
-            Vector2 offset = center - rb.position;
-
-            if (Time.time >= nextRepath)
+            Vector2 goal = movementGoal + (center - rb.position);
+            Vector2 target = goal;
+            if (pathRequest != null && chasing && navigation.Clear(center, goal))
             {
-                navigation.FindPath(
-                    center,
-                    movementGoal + offset,
-                    path);
-
-                waypoint = 0;
-
-                nextRepath =
-                    Time.time +
-                    Mathf.Max(0.2f, repathInterval) +
-                    Random.Range(0f, 0.15f);
+                navigation.CancelPath(pathRequest);
+                nextRepath = 0f;
             }
-
-            while (waypoint < path.Count &&
-                   Vector2.Distance(
-                       center, path[waypoint]) < 0.04f)
-            {
-                waypoint++;
-            }
-
-            if (waypoint >= path.Count)
+            else if (!TryGetPathTarget(center, goal, out target))
             {
                 rb.velocity = Vector2.zero;
                 return;
             }
 
-            // Suavizar la ruta saltando puntos visibles.
-            for (int i = Mathf.Min(
-                     waypoint + 8, path.Count - 1);
-                 i > waypoint;
-                 i--)
-            {
-                if (navigation.Clear(center, path[i]))
-                {
-                    waypoint = i;
-                    break;
-                }
-            }
-
-            Vector2 delta = path[waypoint] - center;
+            Vector2 delta = target - center;
             remaining = delta.magnitude;
             direction = delta.normalized;
 
@@ -712,6 +704,43 @@ public class GoblinAI : MonoBehaviour
             rb.velocity = Vector2.zero;
     }
 
+    private bool TryGetPathTarget(Vector2 center, Vector2 goal, out Vector2 target)
+    {
+        if (pathRequest != null && pathRequest.Take(path)) waypoint = 0;
+
+        if (Time.time >= nextRepath)
+        {
+            if (pathRequest == null)
+            {
+                navigation.FindPath(center, goal, path);
+                waypoint = 0;
+            }
+
+            if (pathRequest == null || navigation.RequestPath(pathRequest, center, goal))
+                nextRepath = Time.time + Mathf.Max(0.2f, repathInterval) + Random.Range(0f, 0.15f);
+        }
+
+        while (waypoint < path.Count && Vector2.Distance(center, path[waypoint]) < 0.04f)
+            waypoint++;
+
+        if (waypoint >= path.Count)
+        {
+            target = center;
+            return false;
+        }
+
+        // Suavizar la ruta saltando puntos visibles.
+        for (int i = Mathf.Min(waypoint + 8, path.Count - 1); i > waypoint; i--)
+        {
+            if (!navigation.Clear(center, path[i])) continue;
+            waypoint = i;
+            break;
+        }
+
+        target = path[waypoint];
+        return true;
+    }
+
     private void Face(Vector2 delta)
     {
         if (delta.sqrMagnitude < 0.000001f)
@@ -734,7 +763,7 @@ public class GoblinAI : MonoBehaviour
         Face(lungeDirection);
         animator.SetBool("IsMoving", false);
         animator.SetInteger("ActionState", action);
-        nextAttackTime = Time.time + attackCooldown;
+        nextAttackTime = Time.time + CurrentAttackCooldown;
         GoblinAudio sound = GetComponent<GoblinAudio>();
         if (sound != null) sound.AttackVoice();
         yield return new WaitForSeconds(windupSeconds);
@@ -798,13 +827,14 @@ public class GoblinAI : MonoBehaviour
 
         animator.SetInteger("ActionState", 0);
 
-        nextAttackTime = Time.time + attackCooldown;
+        nextAttackTime = Time.time + CurrentAttackCooldown;
         nextRepath = 0f;
         isAttacking = false;
     }
 
     private void OnDisable()
     {
+        if (pathRequest != null && navigation != null) navigation.CancelPath(pathRequest);
         agents.Remove(this);
         windingUp = lunging = false;
         EndStun();

@@ -44,7 +44,10 @@ public class CombatHUD : MonoBehaviour
             wavePanel.alpha = 1f;
             int totalWaves = activeEncounter.waves != null ? Mathf.Max(1, activeEncounter.waves.Length) : 2;
             int currentWave = Mathf.Clamp(activeEncounter.CurrentWaveIndex + 1, 1, totalWaves);
-            if (waveTitle != null) waveTitle.text = "OLEADA " + currentWave + " DE " + totalWaves;
+            if (waveTitle != null)
+                waveTitle.text = activeEncounter.ReinforcementSpawnPoint != null
+                    ? "HORDA DE LA LLORONA"
+                    : "OLEADA " + currentWave + " DE " + totalWaves;
             if (waveCount != null) waveCount.text = "DUENDES RESTANTES: " + activeEncounter.RemainingInCurrentWave;
             return;
         }

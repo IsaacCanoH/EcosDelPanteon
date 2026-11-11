@@ -22,6 +22,7 @@ public class EnemyHealth : MonoBehaviour, IDamageable
     [Header("Recompensas (Drops)")]
     public bool dropsHealthOrbOnDeath = false;
     public GameObject healthOrbPrefab;
+    internal bool? EncounterHealingDrop { get; set; }
 
     public bool IsDead { get; private set; }
     public event Action<int, int> OnHealthChanged; // (actual, maximo)
@@ -197,7 +198,8 @@ public class EnemyHealth : MonoBehaviour, IDamageable
         // Exclusión estricta de Nivel 1: en Nivel 2, 3 y 4 los duendes grandes y arqueros sueltan orbes de vida rojos
         if (!IsLevel1Scene())
         {
-            bool dropsOrb = dropsHealthOrbOnDeath || variant == EnemyVariant.ChubbyGoblin || variant == EnemyVariant.ArcherGoblin;
+            bool dropsOrb = EncounterHealingDrop ??
+                (dropsHealthOrbOnDeath || variant == EnemyVariant.ChubbyGoblin || variant == EnemyVariant.ArcherGoblin);
             if (dropsOrb)
             {
                 SpawnOneHeartOrb(transform.position, healthOrbPrefab);
@@ -205,6 +207,9 @@ public class EnemyHealth : MonoBehaviour, IDamageable
         }
 
         OnDied?.Invoke(this);
+
+        if (TryGetComponent(out SpectralChildBossAI boss) && boss.OwnsEncounterDeath)
+            return;
 
         if (goblinAI != null) goblinAI.enabled = false;
         if (legacyGoblinCombat != null) legacyGoblinCombat.enabled = false;

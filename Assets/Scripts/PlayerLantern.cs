@@ -17,6 +17,7 @@ public class PlayerLantern : MonoBehaviour
     [Min(0.1f)] public float range = 2.15f;
     [Range(20f, 180f)] public float angle = 110f;
     [Min(0.1f)] public float cooldown = 1f;
+    [SerializeField] private bool dispelArrows;
 
     [Header("Mejora del Pilar de Luz (Nivel 3 - Ataque en Radio 360°)")]
     public bool isRadialUpgraded = false;
@@ -68,6 +69,12 @@ public class PlayerLantern : MonoBehaviour
         body = GetComponent<Collider2D>();
         if (flashVisual != null) flashVisual.enabled = false;
         if (animaVisual != null) animaVisual.enabled = false;
+    }
+
+    private void Start()
+    {
+        if (isRadialUpgraded)
+            EnableRadialUpgrade(radialDamage, radialRange);
     }
 
     public void EnableRadialUpgrade(int newDamage = 34, float newRadialRange = 2.85f)
@@ -142,6 +149,18 @@ public class PlayerLantern : MonoBehaviour
         {
             if (collider == null || collider.transform.IsChildOf(transform)) continue;
 
+            if (dispelArrows && collider.TryGetComponent(out GoblinArrowProjectile arrow))
+            {
+                TryDispelArrow(arrow);
+                continue;
+            }
+
+            if (dispelArrows && collider.TryGetComponent(out SpectralProjectile orb) && orb.CanBeDispelledByLantern)
+            {
+                TryDispelSpectralProjectile(orb);
+                continue;
+            }
+
             GoblinCombat target = collider.GetComponentInParent<GoblinCombat>();
             EnemyHealth enemyHealth = collider.GetComponentInParent<EnemyHealth>();
             GoblinAI goblinAI = collider.GetComponentInParent<GoblinAI>();
@@ -191,6 +210,34 @@ public class PlayerLantern : MonoBehaviour
             }
         }
         return true;
+    }
+
+    internal bool TryDispelArrow(GoblinArrowProjectile arrow)
+    {
+        return arrow != null && CanDispelProjectileAt(arrow.transform.position) && arrow.Dispel();
+    }
+
+    internal bool TryDispelSpectralProjectile(SpectralProjectile orb)
+    {
+        return orb != null && orb.CanBeDispelledByLantern &&
+               CanDispelProjectileAt(orb.transform.position) && orb.Dispel();
+    }
+
+    private bool CanDispelProjectileAt(Vector2 position)
+    {
+        if (!dispelArrows || !isActiveAndEnabled || Time.timeScale <= 0f || Time.time >= flashUntil)
+            return false;
+
+        Vector2 delta = position - flashOrigin;
+        float effectiveRange = isRadialUpgraded ? radialRange : range;
+        if (delta.sqrMagnitude > effectiveRange * effectiveRange)
+            return false;
+
+        if (!isRadialUpgraded && delta.sqrMagnitude > 0.01f &&
+            Vector2.Dot(flashDirection, delta.normalized) < Mathf.Cos(angle * 0.5f * Mathf.Deg2Rad))
+            return false;
+
+        return navigation == null || navigation.HasLineOfSight(flashOrigin, position);
     }
 
     private void LateUpdate()

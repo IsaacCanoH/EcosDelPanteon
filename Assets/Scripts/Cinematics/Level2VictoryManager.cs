@@ -103,7 +103,7 @@ public class Level2VictoryManager : MonoBehaviour
 
         if (IsLevel3Scene())
         {
-            nextSceneName = "MenuPrincipal";
+            nextSceneName = "Cementerio_Nivel4";
         }
 
         SetupProceduralUIIfMissing();
@@ -498,7 +498,7 @@ public class Level2VictoryManager : MonoBehaviour
     /// Toma las texturas originales de las dos hojas de la puerta lateral (Imagen 1) y genera 10 frames en perspectiva 2.5D:
     /// desde CERRADA en el muro derecho (frame 0) hasta ABIERTA hacia adentro (frame 9, espejo exacto de Imagen 1).
     /// </summary>
-    private static void GenerateEastGateAnimationFrames(
+    internal static void GenerateEastGateAnimationFrames(
         Sprite westNorthSprite,
         Sprite westSouthSprite,
         out Sprite[] eastNorthFrames,
@@ -845,7 +845,7 @@ public class Level2VictoryManager : MonoBehaviour
         closedGateBlocker.size = new Vector2(3.6f, 1.0f);
     }
 
-    private static void GenerateNorthGateAnimationFrames(out Sprite[] westLeafFrames, out Sprite[] eastLeafFrames)
+    internal static void GenerateNorthGateAnimationFrames(out Sprite[] westLeafFrames, out Sprite[] eastLeafFrames)
     {
         int frameCount = 10;
         westLeafFrames = new Sprite[frameCount];
