@@ -198,11 +198,13 @@ public class LevelOneEnding : MonoBehaviour
         bool chapterComplete = victory && buttons && sideExit != null && !epilogueVictory;
         retryLabel.text = chapterComplete ? "SIGUIENTE" : epilogueVictory ? "REINICIAR" : victory ? "CONTINUAR" : "REINTENTAR";
         quitLabel.text = chapterComplete ? "REINICIAR" : "SALIR";
-        resultTitle.text = victory ? "VICTORIA" : "DERROTA";
+        resultTitle.text = victory ? (epilogueVictory ? "¡VICTORIA!" : "VICTORIA") : "DERROTA";
         resultText.text = victory
-            ? "Recuperaste las tres monedas.\nEl panteón vuelve a estar en calma."
+            ? (epilogueVictory
+                ? "Los tres muñecos descansan en el altar.\nEl panteón vuelve a estar en calma."
+                : "Recuperaste las tres monedas.\nEl panteón está en calma… por ahora.")
             : "Los duendes te han alcanzado.\nVuelve a intentarlo.";
-        resultHint.text = "ABANDONANDO EL PANTEÓN...";
+        resultHint.text = epilogueVictory ? "ABANDONANDO EL PANTEÓN..." : "SALIENDO DE LA ZONA...";
         resultHint.gameObject.SetActive(!buttons);
         buttonRow.SetActive(buttons);
         resultPanel.alpha = 1f;
@@ -407,6 +409,15 @@ public class LevelOneEnding : MonoBehaviour
         PauseResult();
     }
 
+    internal IEnumerator ShowEpilogueDeparture()
+    {
+        epilogueVictory = true;
+        State = EndingState.VictoryMessage;
+        ShowResult(true, false);
+        yield return new WaitForSecondsRealtime(victoryMessageSeconds);
+        yield return FadeResultsOut();
+    }
+
     internal void ShowEpilogueVictory()
     {
         epilogueVictory = true;
@@ -414,8 +425,6 @@ public class LevelOneEnding : MonoBehaviour
         ExitFinished = true;
         enabled = true;
         ShowResult(true, true);
-        resultTitle.text = "¡VICTORIA!";
-        resultText.text = "Los tres muñecos descansan en el altar.\nEl panteón vuelve a estar en calma.";
         PauseResult();
     }
 

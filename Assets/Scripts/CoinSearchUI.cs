@@ -24,6 +24,10 @@ public class CoinSearchUI : MonoBehaviour
     private int lastClueStage = -1;
     private bool objectiveShown;
     private bool showingObjective;
+    private bool storyShown;
+    private bool showingStory;
+    private LevelOneStoryIntro storyIntro;
+    private int storyAdvancedFrame = -1;
     private int ClueStage { get { return collector.waveDirector != null
         ? collector.waveDirector.CompletedWaves : collector.collectedCoins; } }
     private bool WaveActive { get { return collector != null && collector.waveDirector != null && collector.waveDirector.IsWaveActive; } }
@@ -42,6 +46,7 @@ public class CoinSearchUI : MonoBehaviour
     private bool movementLocked;
 
     public bool IsClueOpen { get { return clueOpen; } }
+    public bool IsStoryOpen { get { return clueOpen && showingStory; } }
 
     private void Awake()
     {
@@ -96,7 +101,15 @@ public class CoinSearchUI : MonoBehaviour
 
     public void ToggleClue()
     {
-        if (menuCovered) return;
+        if (menuCovered || storyAdvancedFrame == Time.frameCount) return;
+        if (showingStory)
+        {
+            storyAdvancedFrame = Time.frameCount;
+            showingStory = false;
+            storyIntro.SetVisible(false);
+            ShowCurrentClue();
+            return;
+        }
         if (clueOpen && showingObjective) ShowCurrentClue();
         else if (clueOpen) CloseClue();
         else ShowCurrentClue();
@@ -108,6 +121,23 @@ public class CoinSearchUI : MonoBehaviour
             clueCard == null || clueBackdrop == null ||
             clueTitle == null || clueText == null || coins == null)
             return;
+
+        if (!storyShown && !objectiveShown && collector.collectedCoins == 0 &&
+            collector.waveDirector != null &&
+            UnityEngine.SceneManagement.SceneManager.GetActiveScene().name == "Cementerio_Nivel1")
+        {
+            storyShown = true;
+            storyIntro = LevelOneStoryIntro.Create(clueText.font, ToggleClue);
+            if (storyIntro != null)
+            {
+                showingStory = true;
+                OpenCluePause();
+                SetClueVisibility(false);
+                storyIntro.SetVisible(true);
+                if (searchPanel != null) searchPanel.alpha = 0f;
+                return;
+            }
+        }
 
         showingObjective = !objectiveShown && collector.waveDirector != null &&
             collector.collectedCoins == 0;
@@ -140,6 +170,13 @@ public class CoinSearchUI : MonoBehaviour
             clueText.text = next.clue;
         }
         if (!showingObjective) lastClueStage = ClueStage;
+        OpenCluePause();
+        SetClueVisibility(true);
+        if (searchPanel != null) searchPanel.alpha = 0f;
+    }
+
+    private void OpenCluePause()
+    {
         if (!clueOpen)
         {
             // Primero soltar el bloqueo propio de la busqueda, despues adquirir el de la pista.
@@ -154,15 +191,14 @@ public class CoinSearchUI : MonoBehaviour
             AudioListener.pause = true;
             clueOpen = true;
         }
-        SetClueVisibility(true);
-        if (searchPanel != null) searchPanel.alpha = 0f;
     }
 
     // Oculta la pista mientras el menu esta encima, conservando su pausa y progreso.
     public void SetMenuCovered(bool covered)
     {
         menuCovered = covered;
-        SetClueVisibility(clueOpen && !covered);
+        SetClueVisibility(clueOpen && !showingStory && !covered);
+        if (storyIntro != null) storyIntro.SetVisible(IsStoryOpen && !covered);
         if (covered)
         {
             if (searchPanel != null) searchPanel.alpha = 0f;
@@ -172,6 +208,8 @@ public class CoinSearchUI : MonoBehaviour
 
     public void CloseClue()
     {
+        showingStory = false;
+        if (storyIntro != null) storyIntro.SetVisible(false);
         showingObjective = false;
         bool wasOpen = clueOpen;
         clueOpen = false;
@@ -198,7 +236,7 @@ public class CoinSearchUI : MonoBehaviour
             clueBackdrop.alpha = visible ? 1f : 0f;
             clueBackdrop.blocksRaycasts = visible;
         }
-        if (clueHint != null) clueHint.enabled = !visible && CanRead();
+        if (clueHint != null) clueHint.enabled = !visible && !showingStory && CanRead();
     }
 
     public void SetSearchTarget(GoldCoinPickup next, float amount, bool isSearching)
@@ -253,5 +291,10 @@ public class CoinSearchUI : MonoBehaviour
         CloseClue();
         if (searchPanel != null) searchPanel.alpha = 0f;
         if (clueHint != null) clueHint.enabled = false;
+    }
+
+    private void OnDestroy()
+    {
+        if (storyIntro != null) Destroy(storyIntro.gameObject);
     }
 }

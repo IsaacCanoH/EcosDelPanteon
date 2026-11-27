@@ -17,7 +17,7 @@ public sealed class DollObjectiveUI : MonoBehaviour
 
     private void Update()
     {
-        if (GameControls.CluePressed || Input.GetKeyDown(KeyCode.P))
+        if (GameControls.CluePressed)
             ShowObjective();
     }
 

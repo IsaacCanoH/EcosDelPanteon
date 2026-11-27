@@ -1,99 +1,33 @@
-using System;
-using TMPro;
 using UnityEditor;
 using UnityEditor.SceneManagement;
 using UnityEngine;
-using UnityEngine.SceneManagement;
-using UnityEngine.UI;
 
-[InitializeOnLoad]
+// Explicit, read-only authoring helpers. Opening the project must never rebuild
+// or automatically save a legacy menu over the approved scene.
 public static class MenuPrincipalDesigner
 {
     private const string ScenePath = "Assets/Scenes/MenuPrincipal.unity";
 
-    static MenuPrincipalDesigner()
+    [MenuItem("Herramientas/Menu Principal/Abrir nuevo menú")]
+    public static void OpenMenu()
     {
-        EditorApplication.delayCall += AutoApplyIfInScene;
+        if (EditorApplication.isPlayingOrWillChangePlaymode) return;
+        if (!EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
+        EditorSceneManager.OpenScene(ScenePath);
     }
 
-    private static void AutoApplyIfInScene()
+    [MenuItem("Herramientas/Menu Principal/Comprobar recursos")]
+    public static void CheckResources()
     {
-        Scene activeScene = SceneManager.GetActiveScene();
-        if (activeScene.path == ScenePath)
+        string[] files = { "MainMenu.png", "LevelSelect.png", "Backdrop.png", "Lantern.png", "MenuHighlight.shader" };
+        bool complete = true;
+        foreach (string file in files)
         {
-            ApplyDesign();
+            string path = "Assets/Resources/UI/Menu/"+file;
+            if (AssetDatabase.LoadMainAssetAtPath(path) != null) continue;
+            Debug.LogWarning("Recurso de menú ausente: "+path);
+            complete = false;
         }
-    }
-
-    [MenuItem("Herramientas/Menu Principal/Actualizar Diseño y Opciones")]
-    public static void ApplyDesign()
-    {
-        Scene activeScene = SceneManager.GetActiveScene();
-        bool wasDifferentScene = activeScene.path != ScenePath;
-
-        if (wasDifferentScene)
-        {
-            if (!Application.isBatchMode && !EditorSceneManager.SaveCurrentModifiedScenesIfUserWantsTo()) return;
-            EditorSceneManager.OpenScene(ScenePath);
-        }
-
-        GameObject canvasGo = GameObject.Find("Canvas_Menu");
-        if (canvasGo == null)
-        {
-            Debug.LogWarning("[MenuPrincipalDesigner] No se encontró Canvas_Menu en la escena.");
-            return;
-        }
-
-        MenuPrincipal[] allMenus = UnityEngine.Object.FindObjectsOfType<MenuPrincipal>();
-        MenuPrincipal menu = null;
-        foreach (var m in allMenus)
-        {
-            if (m.gameObject.name == "ControlMenu") { menu = m; break; }
-        }
-        if (menu == null && allMenus.Length > 0) menu = allMenus[0];
-        if (menu == null) menu = canvasGo.AddComponent<MenuPrincipal>();
-
-        // Eliminar duplicados si existieran en Canvas_Menu
-        foreach (var m in allMenus)
-        {
-            if (m != menu && m.gameObject == canvasGo)
-            {
-                UnityEngine.Object.DestroyImmediate(m);
-            }
-        }
-
-        // Ejecutar construcción procedural de elementos
-        menu.ConstruirOpcionesSiFaltan();
-
-        // Asegurar que el título tenga el texto exacto pedido
-        Transform areaMenu = canvasGo.transform.Find("AreaMenu");
-        if (areaMenu != null)
-        {
-            Transform titTr = areaMenu.Find("Titulo");
-            if (titTr != null)
-            {
-                TMP_Text tmp = titTr.GetComponent<TMP_Text>();
-                if (tmp != null)
-                {
-                    tmp.text = "ECOS DEL PANTEÓN";
-                    tmp.fontSize = 44;
-                    tmp.alignment = TextAlignmentOptions.Center;
-                    tmp.color = new Color(0.98f, 0.90f, 0.62f, 1f);
-                    EditorUtility.SetDirty(tmp);
-                }
-            }
-        }
-
-        // Marcar la escena como modificada y guardarla
-        EditorUtility.SetDirty(menu);
-        EditorSceneManager.MarkSceneDirty(SceneManager.GetActiveScene());
-        EditorSceneManager.SaveOpenScenes();
-
-        Debug.Log("[MenuPrincipalDesigner] Menú Principal y Apartado de Opciones actualizados exitosamente.");
-
-        if (wasDifferentScene && !string.IsNullOrEmpty(activeScene.path))
-        {
-            EditorSceneManager.OpenScene(activeScene.path);
-        }
+        if (complete) Debug.Log("Menú pixel art: las cinco capas y recursos están disponibles.");
     }
 }

@@ -16,6 +16,7 @@ public class LloronaSpeechBubble : MonoBehaviour
     private TMP_Text hintText;
     private bool isTyping = false;
     public bool IsTyping => isTyping;
+    public bool IsVisible { get { return canvasGroup != null && canvasGroup.alpha > 0f; } }
     private string targetFullText = "";
     private Coroutine typingRoutine;
 
@@ -159,7 +160,7 @@ public class LloronaSpeechBubble : MonoBehaviour
         // Esperar que el jugador confirme ÚNICAMENTE con la tecla P para continuar
         while (true)
         {
-            if (Input.GetKeyDown(KeyCode.P) || GameControls.CluePressed)
+            if (GameControls.CluePressed)
             {
                 break;
             }

@@ -255,59 +255,38 @@ namespace Cainos.PixelArtTopDown_Basic
                 return;
             }
 
-            Vector2 dir = Vector2.zero;
+            Vector2 dir = Vector2.ClampMagnitude(GameControls.Move, 1f);
 
-            // Soporte de Teclas A/D y Flechas
-            if (Input.GetKey(KeyCode.A) || Input.GetKey(KeyCode.LeftArrow))
+            if (AndroidTouchInput.IsAndroid)
             {
-                dir.x = -1;
-                if (animator != null) animator.SetInteger("Direction", 3);
-                if (spriteRenderer != null) spriteRenderer.flipX = true;
+                int previousDirection = animator != null ? animator.GetInteger("Direction") : 0;
+                int facing = AndroidTouchInput.ResolveFacingDirection(dir, previousDirection);
+                if (animator != null) animator.SetInteger("Direction", facing);
+                if (spriteRenderer != null && (facing == 2 || facing == 3))
+                    spriteRenderer.flipX = facing == 3;
             }
-            else if (Input.GetKey(KeyCode.D) || Input.GetKey(KeyCode.RightArrow))
+            else
             {
-                dir.x = 1;
-                if (animator != null) animator.SetInteger("Direction", 2);
-                if (spriteRenderer != null) spriteRenderer.flipX = false;
-            }
-
-            // Soporte de Teclas W/S y Flechas
-            if (Input.GetKey(KeyCode.W) || Input.GetKey(KeyCode.UpArrow))
-            {
-                dir.y = 1;
-                if (animator != null) animator.SetInteger("Direction", 1);
-            }
-            else if (Input.GetKey(KeyCode.S) || Input.GetKey(KeyCode.DownArrow))
-            {
-                dir.y = -1;
-                if (animator != null) animator.SetInteger("Direction", 0);
-            }
-
-            // Soporte GameControls (mandos / input system)
-            if (dir == Vector2.zero && GameControls.Move != Vector2.zero)
-            {
-                dir = GameControls.Move;
-                if (dir.x < -0.1f)
+                if (dir.x < -0.05f)
                 {
                     if (animator != null) animator.SetInteger("Direction", 3);
                     if (spriteRenderer != null) spriteRenderer.flipX = true;
                 }
-                else if (dir.x > 0.1f)
+                else if (dir.x > 0.05f)
                 {
                     if (animator != null) animator.SetInteger("Direction", 2);
                     if (spriteRenderer != null) spriteRenderer.flipX = false;
                 }
-                else if (dir.y > 0.1f)
+
+                if (dir.y > 0.05f)
                 {
                     if (animator != null) animator.SetInteger("Direction", 1);
                 }
-                else if (dir.y < -0.1f)
+                else if (dir.y < -0.05f)
                 {
                     if (animator != null) animator.SetInteger("Direction", 0);
                 }
             }
-
-            dir = Vector2.ClampMagnitude(dir, 1f);
             if (animator != null) animator.SetBool("IsMoving", dir.sqrMagnitude > 0.01f);
 
             movement = dir;

@@ -87,6 +87,7 @@ public sealed class Level1Epilogue : MonoBehaviour
         yield return new WaitForSeconds(0.48f);
         llorona.gameObject.SetActive(false);
         yield return Dawn();
+        yield return result.ShowEpilogueDeparture();
 
         yield return ResumeWalkingCamera();
         yield return CemeterySceneMotion.WalkPath(player, result.exitNavigation, result.gatePoint.position);
