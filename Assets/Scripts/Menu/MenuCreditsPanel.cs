@@ -49,23 +49,33 @@ public sealed class MenuCreditsPanel : MonoBehaviour
         body.raycastTarget=true;
         body.text=
             Heading("EQUIPO CREADOR")+
-            "Isaac Cano Hernandez\nLuis Manuel Ramirez Ramirez\n\n"+
+            "Isaac Cano Hernández\nLuis Manuel Ramírez Ramírez\n\n"+
             Heading("PROGRAMACIÓN Y DISEÑO DE NIVELES")+
-            "Isaac Cano Hernandez\nNiveles 1 y 4\n\n"+
-            "Luis Manuel Ramirez Ramirez\nNiveles 2 y 3\n\n"+
+            "Isaac Cano Hernández\nNiveles 1 y 4\n\nLuis Manuel Ramírez Ramírez\nNiveles 2 y 3\n\n"+
             Heading("ARTE Y ANIMACIÓN")+
-            "<color=#FFC431>Sprites</color>\nUnity Asset Store\n\n"+
-            "<color=#FFC431>Personajes</color>\n"+
-            "Blackhole42.itch\nRaincstudios.itch\nAkari21.itch\nElthen.itch\nAuryjj.itch\n\n"+
-            Heading("MÚSICA Y EFECTOS DE SONIDO")+
-            "<color=#FFC431>Efectos de sonido</color>\nFreesound\n\n"+
-            "<color=#FFC431>Música</color>\nLacrimosa\nWolfgang Amadeus Mozart\nVersión para piano\n\n"+
+            "<color=#FFC431>Personaje principal</color>\nBlackHole42\n32x32 Top-Down Character Animations\n\n"+
+            "<color=#FFC431>Duende</color>\nJayinpixel (antes Auryjj)\nFREE Top Down 32x32 Animated Goblin Enemy\n\n"+
+            "<color=#FFC431>Llorona</color>\nAkari21\nOne Dollar Monsters #3: Banshee\n\n"+
+            "<color=#FFC431>Ambiente</color>\nCainos - Unity Asset Store\nPixel Art Top Down - Basic\n\n"+
+            "<color=#FFC431>Referencias visuales</color>\nBruja: Elthen\nNiño: RainCStudios\n\n"+
+            "<color=#FFC431>Menú y pergamino de introducción</color>\nImágenes generadas con IA\nSelección e integración del equipo\n\n"+
+            Heading("MÚSICA")+
+            "Lacrimosa - Wolfgang Amadeus Mozart\nVersión para piano: Saturn-3-Music\nMozart - Lacrimosa (Requiem) - Piano Version\nPixabay Content License\n\n"+
+            Heading("EFECTOS DE SONIDO")+
+            "<color=#FFC431>Freesound - CC BY 4.0</color>\nBenboncan - Running On Gravel\nhttps://freesound.org/s/137874/\n\n"+
+            "Nanakisan - Evil Laugh 8\nhttps://freesound.org/s/253532/\n\nNanakisan - Evil Laugh 4\nhttps://freesound.org/s/253530/\n\n"+
+            "Licencia de estos tres sonidos:\nhttps://creativecommons.org/licenses/by/4.0/\nArchivos renombrados para su uso en Unity.\n\n"+
+            "<color=#FFC431>Freesound - CC0</color>\ngreyfeather - sword slash energy wave\nDanJFilms - Woman Screaming\nLilMati - Crystal Magic - Dark Spell Rise\nalegemaate (Allan Legemaate) - Stone Scrape\n\n"+
+            "<color=#FFC431>OpenGameArt - CC0</color>\nartisticdude - Goblins Sound Pack\n\n"+
+            "<color=#FFC431>Kenney - CC0</color>\nRPG Audio e Impact Sounds\n\n"+
+            "<color=#FFC431>Pixabay Content License</color>\nLiecio - Collect Points\nrevolt2563, vía freesound_community\nFootsteps Dirt Gravel\n\n"+
+            Heading("TIPOGRAFÍAS")+
+            "Press Start 2P Project Authors\nPress Start 2P - SIL OFL 1.1\nLiberation Sans - Google / Red Hat\nSIL OFL 1.1\n\n"+
             Heading("AGRADECIMIENTOS")+
-            "Universidad Tecnológica\ndel Norte de Guanajuato\n\n"+
-            "Prof. Gabriel Barrón Rodriguez\nCreación de Videojuegos\n\n"+
+            "Universidad Tecnológica\ndel Norte de Guanajuato\n\nProf. Gabriel Barrón Rodriguez\nCreación de Videojuegos\n\n"+
             Heading("DESARROLLADO CON")+
             "Unity 2021.3";
-        content.sizeDelta=new Vector2(TextWidth,Mathf.Ceil(body.GetPreferredValues(TextWidth,10000f).y)+50f);
+        content.sizeDelta=new Vector2(TextWidth,Mathf.Ceil(body.GetPreferredValues(TextWidth,float.PositiveInfinity).y)+50f);
         scroll.content=content;
 
         var track=Rect("Barra_Desplazamiento",transform,new Rect(1520f,208f,22f,546f));
