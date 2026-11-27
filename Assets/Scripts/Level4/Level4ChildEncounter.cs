@@ -269,16 +269,16 @@ public sealed class Level4ChildEncounter : MonoBehaviour
     {
         if (!controlsLocked) return;
         controlsLocked = false;
-        mainCamera.orthographicSize = originalZoom;
-        if (follow != null)
+        if (mainCamera != null) mainCamera.orthographicSize = originalZoom;
+        if (follow != null && player != null)
         {
             follow.target = player.transform;
             follow.enabled = followWasEnabled;
         }
         if (bounds != null) bounds.enabled = boundsWereEnabled;
         if (movement != null) movement.enabled = movementWasEnabled;
-        hud.enabled = hudWasEnabled;
-        lloronaAnimator.updateMode = originalAnimatorMode;
+        if (hud != null) hud.enabled = hudWasEnabled;
+        if (lloronaAnimator != null) lloronaAnimator.updateMode = originalAnimatorMode;
         Time.timeScale = originalTimeScale;
     }
 

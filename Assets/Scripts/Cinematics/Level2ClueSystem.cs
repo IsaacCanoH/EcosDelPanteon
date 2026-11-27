@@ -53,10 +53,11 @@ public class Level2ClueSystem : MonoBehaviour
 
     private void Update()
     {
+        if (AndroidTouchInput.IsAndroid && AndroidTouchInput.DialogueOwnsClue) return;
         if (Level2HUD.IntroSequencePlaying) return;
         if (ParchmentMessageUI.Instance != null && ParchmentMessageUI.Instance.ChangedThisFrame) return;
 
-        if (Input.GetKeyDown(KeyCode.P) || GameControls.CluePressed)
+        if (GameControls.CluePressed)
         {
             if (ParchmentMessageUI.Instance != null && ParchmentMessageUI.Instance.IsOpen)
             {

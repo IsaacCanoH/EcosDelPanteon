@@ -167,7 +167,7 @@ public class ToyEncounterZone : MonoBehaviour
         float dist = Vector2.Distance(transform.position, playerTransform.position);
         if (dist <= searchRadius)
         {
-            bool holdingSearchKey = Input.GetKey(KeyCode.E) || Input.GetKeyDown(KeyCode.E) || GameControls.SearchHeld;
+            bool holdingSearchKey = GameControls.SearchHeld;
             bool centerAltarContact = dist <= 1.6f;
 
             if (holdingSearchKey || centerAltarContact)

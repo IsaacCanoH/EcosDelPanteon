@@ -84,19 +84,21 @@ public class PlayerDeathScreenUI : MonoBehaviour
     private void Update()
     {
         if (!isShowing) return;
+        // Android buttons are dispatched once by EventSystem, not also by the simulated mouse.
+        if (AndroidTouchInput.IsAndroid) return;
 
         // Atajos de teclado inmediatos (funcionan siempre con Time.timeScale = 0)
-        if (Input.GetKeyDown(KeyCode.R) || Input.GetKeyDown(KeyCode.Space))
+        if (GameControls.RetryPressed)
         {
             OnRetryClicked();
             return;
         }
-        else if (Input.GetKeyDown(KeyCode.M) || Input.GetKeyDown(KeyCode.Escape))
+        else if (GameControls.MenuPressed)
         {
             OnMenuClicked();
             return;
         }
-        else if (Input.GetKeyDown(KeyCode.Q))
+        else if (GameControls.QuitPressed)
         {
             OnQuitClicked();
             return;
@@ -105,7 +107,7 @@ public class PlayerDeathScreenUI : MonoBehaviour
         if (authoredBackdrop != null) return;
 
         // Detección directa de ratón por coordenadas de pantalla (100% independiente de EventSystem y módulos UI)
-        Vector2 mousePos = Input.mousePosition;
+        Vector2 mousePos = GameControls.PointerPosition;
         bool hoverRetry = retryRt != null && RectTransformUtility.RectangleContainsScreenPoint(retryRt, mousePos, null);
         bool hoverMenu = menuRt != null && RectTransformUtility.RectangleContainsScreenPoint(menuRt, mousePos, null);
         bool hoverQuit = quitRt != null && RectTransformUtility.RectangleContainsScreenPoint(quitRt, mousePos, null);
@@ -114,7 +116,7 @@ public class PlayerDeathScreenUI : MonoBehaviour
         if (menuImg != null) menuImg.color = hoverMenu ? menuHov : menuNorm;
         if (quitImg != null) quitImg.color = hoverQuit ? quitHov : quitNorm;
 
-        if (Input.GetMouseButtonDown(0))
+        if (GameControls.PointerPressed)
         {
             if (hoverRetry) OnRetryClicked();
             else if (hoverMenu) OnMenuClicked();

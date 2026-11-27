@@ -1,173 +1,533 @@
-using System;
 using System.Collections;
 using TMPro;
 using UnityEngine;
+using UnityEngine.EventSystems;
 using UnityEngine.SceneManagement;
 using UnityEngine.UI;
 
-public class MenuPrincipal : MonoBehaviour
+// Artwork and hit targets share one coordinate system, including on ultrawide
+// displays. Background scenery fills the display; interactive art fits safely.
+[DisallowMultipleComponent]
+[RequireComponent(typeof(Canvas))]
+public sealed class MenuPrincipal : MonoBehaviour
 {
     public static MenuPrincipal Instance { get; private set; }
+    [SerializeField] private Texture2D mainArt;
+    [SerializeField] private Texture2D levelArt;
+    [SerializeField] private Texture2D backdropArt;
+    [SerializeField] private Texture2D lanternArt;
+    [SerializeField] private TMP_FontAsset pixelFont;
+    private Texture2D levelBackdropArt, mainLetteringArt, levelLetteringArt;
+    private RawImage backdropImage;
+    private readonly RawImage[] menuLettering = new RawImage[3];
+    public bool IsLevelSelection { get; private set; }
+    public bool IsCreditsVisible { get; private set; }
+    public bool IsLoading { get; private set; }
+    public int SelectedLevel { get; private set; }
 
-    [Header("Mensajes de Estado")]
-    public TMP_Text mensajeEstado;
-
-    [Header("Título Principal")]
-    public TMP_Text tituloTexto;
-    public TMP_Text subtituloTexto;
-
-    [Header("Panel de Opciones")]
-    public GameObject panelOpciones;
-    public Slider sliderGeneral;
-    public Slider sliderEnemigos;
-    public Slider sliderMusica;
-    public TMP_Text textoValorGeneral;
-    public TMP_Text textoValorEnemigos;
-    public TMP_Text textoValorMusica;
-
-    [Header("Botones de Opciones")]
-    public Button botonAbrirOpciones;
-    public Button botonCerrarOpciones;
-    public Button botonRestablecerOpciones;
-    public Button botonSalirJuego;
-
-    [Header("Badges Informativos de Niveles")]
-    public TMP_Text badgeDuende;
-    public TMP_Text badgeNino;
-    public TMP_Text badgeBruja;
-    public TMP_Text badgeLlorona;
-
-    private bool cargando;
-    private bool opcionesAbiertas;
-    private float ultimoPreviewEnemigo = -1f;
+    private static readonly Vector2 DesignSize = new Vector2(1672f, 941f);
+    private static readonly string[] LevelScenes = {
+        "Cementerio_Nivel1", "Cementerio_Nivel2", "Cementerio_Nivel3", "Cementerio_Nivel4"
+    };
+    private static readonly Rect[] MainBounds = {
+        new Rect(82f,350f,510f,120f), new Rect(120f,510f,470f,104f),
+        new Rect(120f,660f,470f,104f)
+    };
+    private static readonly Rect[] CardBounds = {
+        new Rect(179f,191f,314f,565f), new Rect(510f,191f,314f,565f),
+        new Rect(843f,191f,314f,565f), new Rect(1175f,191f,314f,565f)
+    };
+    private static readonly Rect BackBounds = new Rect(56f,808f,410f,112f);
+    private static readonly Rect LaunchBounds = new Rect(1143f,808f,477f,112f);
+    private static readonly Color Gold = new Color(1f,0.77f,0.19f,1f);
+    private RectTransform canvasRect, artRoot, backdrop;
+    private CanvasGroup mainGroup, levelsGroup, creditsGroup, markerGroup, loadingGroup;
+    private MenuCreditsPanel creditsPanel;
+    private RawImage marker, highlight;
+    private Material highlightMaterial, letteringMaterial;
+    private PixelMenuSelectionGraphic underline, cardFrame, footerFrame;
+    private TMP_Text loadingText;
+    private PixelMenuButton[] mainButtons, levelButtons;
+    private PixelMenuButton creditsBackButton;
+    private bool returningFromCredits;
+    private PixelMenuButton focused;
+    private Vector2 markerPosition, markerTarget, markerSize, previousCanvasSize;
+    private bool markerReady, pressed, changingScreen;
+    private Rect previousSafeArea;
+    private EventSystem eventSystem;
 
     private void Awake()
     {
-        if (Instance != null && Instance != this)
-        {
-            Destroy(this);
-            return;
-        }
-
+        if (Instance != null && Instance != this) { Destroy(gameObject); return; }
         Instance = this;
         Time.timeScale = 1f;
-
-        if (mensajeEstado == null)
+        AudioListener.pause = false;
+        Cursor.lockState = CursorLockMode.None;
+        Cursor.visible = true;
+        eventSystem = GameInputUI.EnsureEventSystem();
+        mainArt = mainArt != null ? mainArt : Resources.Load<Texture2D>("UI/Menu/MainMenu");
+        levelArt = levelArt != null ? levelArt : Resources.Load<Texture2D>("UI/Menu/LevelSelect");
+        backdropArt = backdropArt != null ? backdropArt : Resources.Load<Texture2D>("UI/Menu/Backdrop");
+        lanternArt = lanternArt != null ? lanternArt : Resources.Load<Texture2D>("UI/Menu/Lantern");
+        levelBackdropArt = Resources.Load<Texture2D>("UI/Menu/LevelBackdrop");
+        // Render the original painted glyphs directly, without a regenerated outline.
+        mainLetteringArt = mainArt;
+        levelLetteringArt = levelArt;
+        if (mainArt == null || levelArt == null || backdropArt == null || lanternArt == null ||
+            levelBackdropArt == null || mainLetteringArt == null || levelLetteringArt == null)
         {
-            var msgGo = GameObject.Find("MensajeEstado");
-            if (msgGo != null) mensajeEstado = msgGo.GetComponent<TMP_Text>();
+            Debug.LogError("Faltan las capas del menú pixel art.", this);
+            enabled = false;
+            return;
         }
-
-        LimpiarMensaje();
-        ConstruirOpcionesSiFaltan();
-        InicializarValoresAudio();
+        Transform preview = transform.Find("Preview");
+        if (preview != null) { preview.gameObject.SetActive(false); Destroy(preview.gameObject); }
+        BuildInterface();
+        LayoutInterface();
+        mainGroup.alpha = 1f;
+        levelsGroup.gameObject.SetActive(false);
+        creditsGroup.gameObject.SetActive(false);
+        Focus(mainButtons[0]);
     }
 
     private void Start()
     {
-        if (AudioManager.Instance != null)
-        {
-            AudioManager.Instance.PlayMenuMusic();
-        }
+        if (AudioManager.Instance != null) AudioManager.Instance.PlayMenuMusic();
+    }
 
-        ActualizarTextosValores();
+    private void OnDestroy()
+    {
+        if (Instance == this) Instance = null;
+        if (highlightMaterial != null) Destroy(highlightMaterial);
+        if (letteringMaterial != null) Destroy(letteringMaterial);
     }
 
     private void Update()
     {
-        // Atajo para abrir/cerrar opciones con la tecla O o Escape
-        if (Input.GetKeyDown(KeyCode.O))
+        if (artRoot == null) return;
+        if (previousCanvasSize != canvasRect.rect.size || previousSafeArea != Screen.safeArea)
+            LayoutInterface();
+        if (!IsLoading && !changingScreen && GameControls.CancelPressed) ReturnToMain();
+        AnimateSelection(Time.unscaledDeltaTime);
+    }
+
+    private void BuildInterface()
+    {
+        var canvas = GetComponent<Canvas>();
+        canvas.renderMode = RenderMode.ScreenSpaceOverlay;
+        canvas.sortingOrder = 100;
+        canvas.pixelPerfect = true;
+        canvasRect = (RectTransform)transform;
+        var scaler = GetComponent<CanvasScaler>();
+        if (scaler == null) scaler = gameObject.AddComponent<CanvasScaler>();
+        scaler.uiScaleMode = CanvasScaler.ScaleMode.ConstantPixelSize;
+        scaler.scaleFactor = 1f;
+        if (GetComponent<GraphicRaycaster>() == null) gameObject.AddComponent<GraphicRaycaster>();
+        backdrop = NewRect("Backdrop", transform);
+        var background = backdrop.gameObject.AddComponent<RawImage>();
+        background.texture = backdropArt;
+        background.raycastTarget = false;
+        backdropImage = background;
+        artRoot = NewRect("Menu_Artwork", transform);
+        artRoot.sizeDelta = DesignSize;
+        mainGroup = ScreenGroup("Inicio");
+        levelsGroup = ScreenGroup("Niveles");
+        var letteringShader = Resources.Load<Shader>("UI/Menu/MenuCutout");
+        if (letteringShader != null)
+            letteringMaterial = new Material(letteringShader) { hideFlags = HideFlags.DontSave };
+        AddLettering("Logo",mainGroup.transform,mainLetteringArt,new Rect(36f,98f,610f,218f));
+        menuLettering[0]=AddLettering("Jugar_Letra",mainGroup.transform,mainLetteringArt,new Rect(180f,350f,400f,120f));
+        menuLettering[1]=AddLettering("Creditos_Letra",mainGroup.transform,mainLetteringArt,new Rect(140f,570f,440f,104f));
+        Place(menuLettering[1].rectTransform,new Rect(140f,510f,440f,104f));
+        menuLettering[2]=AddLettering("Salir_Letra",mainGroup.transform,mainLetteringArt,new Rect(180f,670f,320f,104f));
+        Place(menuLettering[2].rectTransform,new Rect(180f,660f,320f,104f));
+        AddLettering("Logo",levelsGroup.transform,levelLetteringArt,new Rect(70f,20f,315f,155f));
+        AddLettering("Titulo",levelsGroup.transform,levelLetteringArt,new Rect(480f,68f,790f,130f));
+        for(int i=0;i<4;i++) AddPlate("Capitulo_"+(i+1),levelsGroup.transform,CardBounds[i],PixelMenuPlate.Shape.Arch);
+        AddPlate("Volver_Arte",levelsGroup.transform,BackBounds,PixelMenuPlate.Shape.Button);
+        AddPlate("Jugar_Arte",levelsGroup.transform,LaunchBounds,PixelMenuPlate.Shape.Button);
+        mainButtons = new PixelMenuButton[3];
+        string[] mainNames = { "Jugar", "Creditos", "Salir" };
+        for (int i=0;i<mainButtons.Length;i++) mainButtons[i] = AddButton(mainNames[i],mainGroup.transform,MainBounds[i],false,i);
+        levelButtons = new PixelMenuButton[6];
+        string[] levelNames = { "Nivel_1_Duende", "Nivel_2_Nino", "Nivel_3_Bruja", "Nivel_4_Llorona" };
+        for (int i=0;i<4;i++) levelButtons[i] = AddButton(levelNames[i],levelsGroup.transform,CardBounds[i],true,i);
+        levelButtons[4] = AddButton("Volver",levelsGroup.transform,BackBounds,true,4);
+        levelButtons[5] = AddButton("Jugar_Nivel",levelsGroup.transform,LaunchBounds,true,5);
+        creditsGroup = ScreenGroup("Creditos");
+        var creditsLogo=AddLettering("Logo",creditsGroup.transform,mainLetteringArt,new Rect(36f,98f,610f,218f));
+        Place(creditsLogo.rectTransform,new Rect(64f,26f,350f,125f));
+        var creditsTitle=AddLettering("Titulo",creditsGroup.transform,mainLetteringArt,new Rect(140f,570f,440f,104f));
+        Place(creditsTitle.rectTransform,new Rect(616f,42f,440f,104f));
+        creditsTitle.color=Gold;
+        creditsPanel=creditsGroup.gameObject.AddComponent<MenuCreditsPanel>();
+        creditsPanel.Build(this,pixelFont);
+        AddPlate("Volver_Arte",creditsGroup.transform,BackBounds,PixelMenuPlate.Shape.Button);
+        creditsBackButton=AddButton("Volver_Creditos",creditsGroup.transform,BackBounds,false,0,true);
+        SetNavigation();
+        cardFrame = NewRect("Selected_Chapter",levelsGroup.transform).gameObject.AddComponent<PixelMenuSelectionGraphic>();
+        cardFrame.shape = PixelMenuSelectionGraphic.Shape.Arch;
+        cardFrame.raycastTarget = false;
+        footerFrame = NewRect("Focused_Footer",artRoot).gameObject.AddComponent<PixelMenuSelectionGraphic>();
+        footerFrame.shape = PixelMenuSelectionGraphic.Shape.Rectangle;
+        footerFrame.raycastTarget = false;
+        underline = NewRect("Selected_Option",mainGroup.transform).gameObject.AddComponent<PixelMenuSelectionGraphic>();
+        underline.shape = PixelMenuSelectionGraphic.Shape.Underline;
+        underline.raycastTarget = false;
+        highlight = NewRect("Lantern_Light",artRoot).gameObject.AddComponent<RawImage>();
+        highlight.raycastTarget = false;
+        var shader = Resources.Load<Shader>("UI/Menu/MenuHighlight");
+        if (shader != null)
         {
-            ToggleOpciones();
+            highlightMaterial = new Material(shader) { hideFlags = HideFlags.DontSave };
+            highlight.material = highlightMaterial;
         }
-        else if (Input.GetKeyDown(KeyCode.Escape))
+        else highlight.gameObject.SetActive(false);
+        var markerRoot = NewRect("Farol_Seleccion",artRoot);
+        markerGroup = markerRoot.gameObject.AddComponent<CanvasGroup>();
+        markerGroup.blocksRaycasts = false;
+        markerGroup.interactable = false;
+        marker = markerRoot.gameObject.AddComponent<RawImage>();
+        marker.texture = lanternArt;
+        marker.raycastTarget = false;
+        var loadingRoot = NewRect("Cargando",transform);
+        Stretch(loadingRoot);
+        loadingGroup = loadingRoot.gameObject.AddComponent<CanvasGroup>();
+        var shade = loadingRoot.gameObject.AddComponent<Image>();
+        shade.color = new Color(0.006f,0.025f,0.028f,1f);
+        var textRoot = NewRect("Estado",loadingRoot);
+        textRoot.sizeDelta = new Vector2(1100f,120f);
+        loadingText = textRoot.gameObject.AddComponent<TextMeshProUGUI>();
+        if (pixelFont != null) loadingText.font = pixelFont;
+        loadingText.fontSize = 24f;
+        loadingText.enableAutoSizing = true;
+        loadingText.fontSizeMin = 12f;
+        loadingText.fontSizeMax = 24f;
+        loadingText.alignment = TextAlignmentOptions.Center;
+        loadingText.color = new Color(1f,0.9f,0.66f);
+        loadingText.raycastTarget = false;
+        loadingRoot.gameObject.SetActive(false);
+        loadingGroup.alpha = 0f;
+    }
+
+    private CanvasGroup ScreenGroup(string name)
+    {
+        var rect = NewRect(name,artRoot);
+        Stretch(rect);
+        var group = rect.gameObject.AddComponent<CanvasGroup>();
+        return group;
+    }
+
+    private RawImage AddLettering(string name, Transform parent, Texture2D texture, Rect bounds)
+    {
+        var rect=NewRect(name,parent);
+        Place(rect,bounds);
+        var image=rect.gameObject.AddComponent<RawImage>();
+        image.texture=texture;
+        image.uvRect=new Rect(bounds.x/DesignSize.x,1f-bounds.yMax/DesignSize.y,bounds.width/DesignSize.x,bounds.height/DesignSize.y);
+        image.raycastTarget=false;
+        image.material=letteringMaterial;
+        return image;
+    }
+
+    private void AddPlate(string name, Transform parent, Rect bounds, PixelMenuPlate.Shape shape)
+    {
+        var rect=NewRect(name,parent);
+        Place(rect,bounds);
+        var plate=rect.gameObject.AddComponent<PixelMenuPlate>();
+        plate.texture=levelArt;
+        plate.sourceBounds=bounds;
+        plate.shape=shape;
+        plate.raycastTarget=false;
+    }
+
+    private PixelMenuButton AddButton(string name, Transform parent, Rect bounds, bool levelScreen, int index, bool creditsScreen=false)
+    {
+        var rect = NewRect(name,parent);
+        Place(rect,bounds);
+        var hit = rect.gameObject.AddComponent<Image>();
+        hit.color = Color.clear;
+        var button = rect.gameObject.AddComponent<PixelMenuButton>();
+        button.transition = Selectable.Transition.None;
+        button.targetGraphic = hit;
+        button.Initialize(this,levelScreen,index,creditsScreen);
+        button.onClick.AddListener(() => Activate(button));
+        return button;
+    }
+
+    private void SetNavigation()
+    {
+        for (int i=0;i<mainButtons.Length;i++)
         {
-            if (opcionesAbiertas)
+            var nav = new Navigation { mode = Navigation.Mode.Explicit };
+            nav.selectOnUp = mainButtons[(i+mainButtons.Length-1)%mainButtons.Length];
+            nav.selectOnDown = mainButtons[(i+1)%mainButtons.Length];
+            mainButtons[i].navigation = nav;
+        }
+        creditsBackButton.navigation=new Navigation { mode=Navigation.Mode.Explicit };
+        for (int i=0;i<4;i++)
+        {
+            var nav = new Navigation { mode = Navigation.Mode.Explicit };
+            nav.selectOnLeft = levelButtons[(i+3)%4];
+            nav.selectOnRight = levelButtons[(i+1)%4];
+            nav.selectOnDown = levelButtons[5];
+            levelButtons[i].navigation = nav;
+        }
+        var back = new Navigation { mode = Navigation.Mode.Explicit };
+        back.selectOnRight = levelButtons[5];
+        back.selectOnUp = levelButtons[0];
+        levelButtons[4].navigation = back;
+        var play = new Navigation { mode = Navigation.Mode.Explicit };
+        play.selectOnLeft = levelButtons[4];
+        play.selectOnUp = levelButtons[0];
+        levelButtons[5].navigation = play;
+    }
+
+    private void LayoutInterface()
+    {
+        Canvas.ForceUpdateCanvases();
+        Vector2 size = canvasRect.rect.size;
+        if (size.x <= 0f || size.y <= 0f) size = new Vector2(Screen.width,Screen.height);
+        Rect safe = Screen.safeArea;
+        if (safe.width <= 0f || safe.height <= 0f) safe = new Rect(0f,0f,Screen.width,Screen.height);
+        float px = size.x / Mathf.Max(1f,Screen.width);
+        float py = size.y / Mathf.Max(1f,Screen.height);
+        Vector2 available = new Vector2(safe.width*px,safe.height*py);
+        float fit = Mathf.Min(available.x/DesignSize.x,available.y/DesignSize.y);
+        artRoot.localScale = Vector3.one*fit;
+        artRoot.anchoredPosition = new Vector2(safe.center.x*px-size.x*0.5f,safe.center.y*py-size.y*0.5f);
+        Texture backgroundTexture = backdropImage.texture;
+        float cover = Mathf.Max(size.x/backgroundTexture.width,size.y/backgroundTexture.height);
+        backdrop.sizeDelta = new Vector2(backgroundTexture.width*cover,backgroundTexture.height*cover);
+        previousCanvasSize = size;
+        previousSafeArea = Screen.safeArea;
+        if (loadingText != null) loadingText.rectTransform.sizeDelta = new Vector2(Mathf.Min(1100f,available.x*0.9f),120f);
+    }
+
+    public void Focus(PixelMenuButton button)
+    {
+        if (!CanUse(button)) return;
+        bool changed = focused != button;
+        focused = button;
+        pressed = false;
+        if (!IsLevelSelection && !IsCreditsVisible)
+            for(int i=0;i<menuLettering.Length;i++) menuLettering[i].color=i==button.Index ? Gold : Color.white;
+        if (IsLevelSelection && button.Index < 4)
+        {
+            SelectedLevel = button.Index;
+            Place(cardFrame.rectTransform,CardBounds[SelectedLevel]);
+            for (int i=4;i<6;i++)
             {
-                CerrarOpciones();
+                var nav = levelButtons[i].navigation;
+                nav.selectOnUp = levelButtons[SelectedLevel];
+                levelButtons[i].navigation = nav;
             }
         }
+        UpdateSelectionTargets();
+        if (changed && eventSystem != null && eventSystem.currentSelectedGameObject != button.gameObject)
+            eventSystem.SetSelectedGameObject(button.gameObject);
     }
 
-    public void AbrirNivel(string nombreEscena)
+    public void Press(PixelMenuButton button, bool down)
     {
-        if (cargando || opcionesAbiertas)
-            return;
+        if (IsLoading || changingScreen) return;
+        if (down) Focus(button);
+        pressed = down && button == focused;
+    }
 
-        if (AudioManager.Instance != null)
-            AudioManager.Instance.PlayButtonClick();
-
-        if (!Application.CanStreamedLevelBeLoaded(nombreEscena))
+    private void UpdateSelectionTargets()
+    {
+        if (focused == null) return;
+        Rect area;
+        if (IsCreditsVisible)
         {
-            MostrarMensaje("Revisa la escena en Build Settings");
-            Debug.LogWarning("No se puede cargar la escena: " + nombreEscena, this);
+            area=BackBounds;
+            markerTarget=ArtPoint(new Vector2(area.x+39f,area.center.y));
+            markerSize=new Vector2(58f,87f);
+            SetHighlight(levelArt,area);
+        }
+        else if (!IsLevelSelection)
+        {
+            area = MainBounds[focused.Index];
+            float y = focused.Index == 0 ? 405f : area.y+43f;
+            float markerX = focused.Index==1 ? 110f : 137f;
+            markerTarget = ArtPoint(new Vector2(markerX,y));
+            markerSize = new Vector2(100f,150f);
+            Place(underline.rectTransform,new Rect(188f,y+44f,326f,12f));
+            highlight.gameObject.SetActive(false);
+        }
+        else if (focused.Index < 4)
+        {
+            area = CardBounds[focused.Index];
+            markerTarget = ArtPoint(new Vector2(area.center.x,756f));
+            markerSize = new Vector2(70f,105f);
+            highlight.gameObject.SetActive(false);
+        }
+        else
+        {
+            area = focused.Index == 4 ? BackBounds : LaunchBounds;
+            markerTarget = ArtPoint(new Vector2(area.x+39f,area.center.y));
+            markerSize = new Vector2(58f,87f);
+            SetHighlight(levelArt,area);
+        }
+        bool footerFocused=IsCreditsVisible || (IsLevelSelection && focused.Index >= 4);
+        footerFrame.gameObject.SetActive(footerFocused);
+        if (footerFocused) Place(footerFrame.rectTransform,area);
+        if (!markerReady) { markerPosition = markerTarget; markerReady = true; }
+    }
+
+    private void SetHighlight(Texture2D texture, Rect bounds)
+    {
+        if (highlightMaterial == null) return;
+        highlight.gameObject.SetActive(true);
+        highlight.texture = texture;
+        highlight.uvRect = new Rect(bounds.x/DesignSize.x,1f-bounds.yMax/DesignSize.y,bounds.width/DesignSize.x,bounds.height/DesignSize.y);
+        Place(highlight.rectTransform,bounds);
+    }
+
+    private void AnimateSelection(float delta)
+    {
+        if (marker == null || !markerReady) return;
+        markerPosition = Vector2.Lerp(markerPosition,markerTarget,1f-Mathf.Exp(-24f*delta));
+        float time = Time.unscaledTime;
+        float bob = Mathf.Round(Mathf.Sin(time*2.2f)*0.8f)*4f;
+        marker.rectTransform.anchoredPosition = new Vector2(Mathf.Round(markerPosition.x),Mathf.Round(markerPosition.y+bob));
+        marker.rectTransform.sizeDelta = markerSize*(pressed ? 0.94f : 1f);
+        float flicker = 0.88f+Mathf.Sin(time*5.3f)*0.06f+Mathf.Sin(time*12.7f)*0.025f;
+        marker.color = new Color(1f,1f,1f,flicker);
+        highlight.color = new Color(1f,0.66f,0.08f,pressed ? 0.72f : 0.22f+flicker*0.13f);
+        cardFrame.color = new Color(1f,0.89f,0.14f,0.98f+Mathf.Sin(time*2.4f)*0.02f);
+        footerFrame.color = Gold;
+        underline.color = new Color(Gold.r,Gold.g,Gold.b,flicker);
+    }
+
+    private void Activate(PixelMenuButton button)
+    {
+        if (!CanUse(button)) return;
+        Focus(button);
+        if (AudioManager.Instance != null) AudioManager.Instance.PlayButtonClick();
+        if (IsCreditsVisible) { ReturnToMain(); return; }
+        if (!IsLevelSelection)
+        {
+            switch (button.Index)
+            {
+                case 0: StartCoroutine(ChangeScreen(true)); break;
+                case 1: ShowCredits(); break;
+                case 2: SalirDelJuego(); break;
+            }
+        }
+        else if (button.Index == 4) ReturnToMain();
+        else if (button.Index == 5) StartSelectedLevel();
+    }
+
+    public void ReturnToMain()
+    {
+        if ((!IsLevelSelection && !IsCreditsVisible) || IsLoading || changingScreen) return;
+        returningFromCredits=IsCreditsVisible;
+        StartCoroutine(ChangeScreen(false));
+    }
+
+    public void ShowCredits()
+    {
+        if (IsCreditsVisible || IsLevelSelection || IsLoading || changingScreen) return;
+        StartCoroutine(ChangeScreen(false,true));
+    }
+
+    private bool CanUse(PixelMenuButton button)
+    {
+        return button!=null && button.gameObject.activeInHierarchy && !IsLoading && !changingScreen &&
+            button.CreditsScreen==IsCreditsVisible && button.LevelScreen==IsLevelSelection;
+    }
+
+    private IEnumerator ChangeScreen(bool toLevels, bool toCredits=false)
+    {
+        changingScreen = true;
+        pressed = false;
+        mainGroup.blocksRaycasts = levelsGroup.blocksRaycasts = creditsGroup.blocksRaycasts = false;
+        CanvasGroup incoming = toCredits ? creditsGroup : toLevels ? levelsGroup : mainGroup;
+        CanvasGroup outgoing = IsCreditsVisible ? creditsGroup : IsLevelSelection ? levelsGroup : mainGroup;
+        incoming.gameObject.SetActive(true);
+        outgoing.gameObject.SetActive(true);
+        footerFrame.gameObject.SetActive(false);
+        backdropImage.texture = toLevels || toCredits ? levelBackdropArt : backdropArt;
+        LayoutInterface();
+        incoming.alpha = 0f;
+        markerGroup.alpha = 0f;
+        float elapsed = 0f;
+        while (elapsed < 0.18f)
+        {
+            elapsed += Time.unscaledDeltaTime;
+            float t = Mathf.Clamp01(elapsed/0.18f);
+            float eased = 1f-(1f-t)*(1f-t);
+            incoming.alpha = eased;
+            outgoing.alpha = 1f-eased;
+            yield return null;
+        }
+        incoming.alpha = 1f;
+        outgoing.alpha = 0f;
+        outgoing.gameObject.SetActive(false);
+        IsLevelSelection = toLevels;
+        IsCreditsVisible = toCredits;
+        if(toCredits) creditsPanel.ResetToTop();
+        changingScreen = false;
+        incoming.blocksRaycasts = true;
+        focused = null;
+        markerReady = false;
+        markerGroup.alpha = 1f;
+        Focus(toCredits ? creditsBackButton : toLevels ? levelButtons[SelectedLevel] : mainButtons[returningFromCredits?1:0]);
+        returningFromCredits=false;
+    }
+
+    public void StartSelectedLevel()
+    {
+        if (!IsLevelSelection || IsLoading || changingScreen) return;
+        if (SelectedLevel < 0 || SelectedLevel >= LevelScenes.Length) return;
+        string scene = LevelScenes[SelectedLevel];
+        if (!Application.CanStreamedLevelBeLoaded(scene))
+        {
+            StartCoroutine(ShowLoadError());
+            Debug.LogWarning("No se encuentra la escena del nivel: "+scene,this);
             return;
         }
-
-        cargando = true;
-        MostrarMensaje("Entrando al panteón...");
-        SceneManager.LoadScene(nombreEscena);
+        IsLoading = true;
+        StartCoroutine(LoadLevel(scene));
     }
 
-    public void MostrarProximamente()
+    private IEnumerator LoadLevel(string scene)
     {
-        if (AudioManager.Instance != null)
-            AudioManager.Instance.PlayButtonClick();
-
-        MostrarMensaje("¡Próximamente en la siguiente actualización!");
+        loadingGroup.gameObject.SetActive(true);
+        loadingText.text = "ENTRANDO AL PANTEÓN...";
+        mainGroup.blocksRaycasts = levelsGroup.blocksRaycasts = false;
+        for (float elapsed=0f;elapsed<0.18f;elapsed+=Time.unscaledDeltaTime)
+        {
+            loadingGroup.alpha = Mathf.Clamp01(elapsed/0.18f);
+            yield return null;
+        }
+        loadingGroup.alpha = 1f;
+        Time.timeScale = 1f;
+        AudioListener.pause = false;
+        AsyncOperation operation = SceneManager.LoadSceneAsync(scene,LoadSceneMode.Single);
+        if (operation == null)
+        {
+            IsLoading = false;
+            levelsGroup.blocksRaycasts = true;
+            yield return ShowLoadError();
+            yield break;
+        }
+        while (!operation.isDone) yield return null;
     }
 
-    public void AbrirOpciones()
+    private IEnumerator ShowLoadError()
     {
-        if (AudioManager.Instance != null)
-            AudioManager.Instance.PlayButtonClick();
-
-        opcionesAbiertas = true;
-        if (panelOpciones != null)
-            panelOpciones.SetActive(true);
-
-        InicializarValoresAudio();
-    }
-
-    public void CerrarOpciones()
-    {
-        if (AudioManager.Instance != null)
-            AudioManager.Instance.PlayButtonClick();
-
-        opcionesAbiertas = false;
-        if (panelOpciones != null)
-            panelOpciones.SetActive(false);
-
-        MostrarMensaje("Ajustes de audio guardados");
-    }
-
-    public void ToggleOpciones()
-    {
-        if (opcionesAbiertas) CerrarOpciones();
-        else AbrirOpciones();
-    }
-
-    public void RestablecerValoresDefault()
-    {
-        if (AudioManager.Instance != null)
-            AudioManager.Instance.PlayButtonClick();
-
-        if (sliderGeneral != null) sliderGeneral.value = 1.0f;
-        if (sliderEnemigos != null) sliderEnemigos.value = 0.8f;
-        if (sliderMusica != null) sliderMusica.value = 0.7f;
-
-        OnGeneralSliderChanged(1.0f);
-        OnEnemigosSliderChanged(0.8f);
-        OnMusicaSliderChanged(0.7f);
-
-        MostrarMensaje("Valores de audio restablecidos");
+        loadingGroup.gameObject.SetActive(true);
+        loadingGroup.alpha = 0.94f;
+        loadingText.text = "NO SE PUDO ABRIR EL NIVEL.\nINTÉNTALO DE NUEVO.";
+        yield return new WaitForSecondsRealtime(1.8f);
+        loadingGroup.gameObject.SetActive(false);
     }
 
     public void SalirDelJuego()
     {
-        if (AudioManager.Instance != null)
-            AudioManager.Instance.PlayButtonClick();
-
 #if UNITY_EDITOR
         UnityEditor.EditorApplication.isPlaying = false;
 #else
@@ -175,552 +535,27 @@ public class MenuPrincipal : MonoBehaviour
 #endif
     }
 
-    private void InicializarValoresAudio()
+    private static RectTransform NewRect(string name, Transform parent)
     {
-        float master = AudioManager.MasterVolume;
-        float enemy = AudioManager.EnemyVolume;
-        float music = AudioManager.MusicVolume;
-
-        if (sliderGeneral != null)
-        {
-            sliderGeneral.onValueChanged.RemoveListener(OnGeneralSliderChanged);
-            sliderGeneral.value = master;
-            sliderGeneral.onValueChanged.AddListener(OnGeneralSliderChanged);
-        }
-
-        if (sliderEnemigos != null)
-        {
-            sliderEnemigos.onValueChanged.RemoveListener(OnEnemigosSliderChanged);
-            sliderEnemigos.value = enemy;
-            sliderEnemigos.onValueChanged.AddListener(OnEnemigosSliderChanged);
-        }
-
-        if (sliderMusica != null)
-        {
-            sliderMusica.onValueChanged.RemoveListener(OnMusicaSliderChanged);
-            sliderMusica.value = music;
-            sliderMusica.onValueChanged.AddListener(OnMusicaSliderChanged);
-        }
-
-        ActualizarTextosValores();
+        var rect = new GameObject(name,typeof(RectTransform)).GetComponent<RectTransform>();
+        rect.SetParent(parent,false);
+        rect.anchorMin = rect.anchorMax = rect.pivot = new Vector2(0.5f,0.5f);
+        return rect;
     }
-
-    private void OnGeneralSliderChanged(float valor)
+    private static void Stretch(RectTransform rect)
     {
-        AudioManager.MasterVolume = valor;
-        ActualizarTextosValores();
+        rect.anchorMin = Vector2.zero;
+        rect.anchorMax = Vector2.one;
+        rect.offsetMin = rect.offsetMax = Vector2.zero;
     }
-
-    private void OnEnemigosSliderChanged(float valor)
+    private static Vector2 ArtPoint(Vector2 p)
     {
-        AudioManager.EnemyVolume = valor;
-        ActualizarTextosValores();
-
-        // Reproducir preview con cooldown para no saturar mientras desliza
-        if (Time.unscaledTime > ultimoPreviewEnemigo + 0.35f)
-        {
-            ultimoPreviewEnemigo = Time.unscaledTime;
-            if (AudioManager.Instance != null)
-                AudioManager.Instance.PlayPreviewEnemySound();
-        }
+        return new Vector2(p.x-DesignSize.x*0.5f,DesignSize.y*0.5f-p.y);
     }
-
-    private void OnMusicaSliderChanged(float valor)
+    private static void Place(RectTransform rect, Rect bounds)
     {
-        AudioManager.MusicVolume = valor;
-        ActualizarTextosValores();
-    }
-
-    private void ActualizarTextosValores()
-    {
-        if (textoValorGeneral != null)
-            textoValorGeneral.text = $"{Mathf.RoundToInt(AudioManager.MasterVolume * 100f)}%";
-
-        if (textoValorEnemigos != null)
-            textoValorEnemigos.text = $"{Mathf.RoundToInt(AudioManager.EnemyVolume * 100f)}%";
-
-        if (textoValorMusica != null)
-            textoValorMusica.text = $"{Mathf.RoundToInt(AudioManager.MusicVolume * 100f)}%";
-    }
-
-    private void MostrarMensaje(string texto)
-    {
-        if (mensajeEstado == null)
-            return;
-
-        mensajeEstado.text = texto;
-        CancelInvoke(nameof(LimpiarMensaje));
-        Invoke(nameof(LimpiarMensaje), 3.0f);
-    }
-
-    private void LimpiarMensaje()
-    {
-        if (mensajeEstado != null)
-            mensajeEstado.text = "";
-    }
-
-    /// <summary>
-    /// Construye y conecta proceduralmente los elementos de UI requeridos si la escena aún no los tiene.
-    /// </summary>
-    public void ConstruirOpcionesSiFaltan()
-    {
-        Transform areaMenu = transform.Find("AreaMenu");
-        if (areaMenu == null)
-        {
-            var amGo = GameObject.Find("AreaMenu");
-            if (amGo != null) areaMenu = amGo.transform;
-        }
-        if (areaMenu == null) return;
-
-        TMP_FontAsset pixelFont = Resources.Load<TMP_FontAsset>("Fonts/PressStart2P-Regular SDF");
-#if UNITY_EDITOR
-        if (pixelFont == null)
-        {
-            pixelFont = UnityEditor.AssetDatabase.LoadAssetAtPath<TMP_FontAsset>("Assets/Fonts/PressStart2P-Regular SDF.asset");
-        }
-#endif
-
-        // 1. Mejorar el Título del juego
-        Transform tituloTr = areaMenu.Find("Titulo");
-        if (tituloTr != null)
-        {
-            tituloTexto = tituloTr.GetComponent<TMP_Text>();
-            if (tituloTexto != null)
-            {
-                tituloTexto.text = "ECOS DEL PANTEÓN";
-                tituloTexto.fontSize = 42;
-                tituloTexto.color = new Color(0.98f, 0.90f, 0.62f, 1f); // Oro brillante
-                if (pixelFont != null) tituloTexto.font = pixelFont;
-                tituloTexto.alignment = TextAlignmentOptions.Center;
-
-                // Crear subtítulo estilizado si no existe
-                Transform subTr = tituloTr.Find("Subtitulo");
-                if (subTr == null)
-                {
-                    GameObject subGo = new GameObject("Subtitulo");
-                    subGo.transform.SetParent(tituloTr, false);
-                    RectTransform srt = subGo.AddComponent<RectTransform>();
-                    srt.anchorMin = new Vector2(0f, 0f);
-                    srt.anchorMax = new Vector2(1f, 0f);
-                    srt.anchoredPosition = new Vector2(0f, -24f);
-                    srt.sizeDelta = new Vector2(0f, 26f);
-
-                    subtituloTexto = subGo.AddComponent<TextMeshProUGUI>();
-                    subtituloTexto.text = "— CAMINOS CRUZADOS —";
-                    subtituloTexto.fontSize = 15;
-                    subtituloTexto.color = new Color(0.78f, 0.72f, 0.62f, 1f); // Plata dorada
-                    if (pixelFont != null) subtituloTexto.font = pixelFont;
-                    subtituloTexto.alignment = TextAlignmentOptions.Center;
-                }
-                else
-                {
-                    subtituloTexto = subTr.GetComponent<TMP_Text>();
-                }
-            }
-        }
-
-        // 2. Decorar e identificar los 4 cuadrantes con badges claros
-        ActualizarBadgeCuadrante(areaMenu, "Boton_Duende", ref badgeDuende, "NIVEL 1: EL DUENDE", "DISPONIBLE · CLIC PARA JUGAR", new Color(0.48f, 0.98f, 0.58f, 1f));
-        ActualizarBadgeCuadrante(areaMenu, "Boton_Nino", ref badgeNino, "NIVEL 2: NIÑO ESPECTRAL", "DISPONIBLE · CLIC PARA JUGAR", new Color(0.48f, 0.85f, 0.98f, 1f));
-        ActualizarBadgeCuadrante(areaMenu, "Boton_Bruja", ref badgeBruja, "NIVEL 3: LA BRUJA", "DISPONIBLE · CLIC PARA JUGAR", new Color(0.82f, 0.52f, 1.0f, 1f));
-        ActualizarBadgeCuadrante(areaMenu, "Boton_Llorona", ref badgeLlorona, "NIVEL 4: LA LLORONA", "BLOQUEADO · PRÓXIMAMENTE", new Color(0.95f, 0.65f, 0.75f, 0.8f));
-
-        // 3. Crear Barra Inferior con Botón de Opciones y Salir
-        Transform barraTr = areaMenu.Find("Barra_Inferior");
-        if (barraTr == null)
-        {
-            GameObject barraGo = new GameObject("Barra_Inferior");
-            barraGo.transform.SetParent(areaMenu, false);
-            RectTransform brt = barraGo.AddComponent<RectTransform>();
-            brt.anchorMin = new Vector2(0.5f, 0f);
-            brt.anchorMax = new Vector2(0.5f, 0f);
-            brt.anchoredPosition = new Vector2(0f, 38f);
-            brt.sizeDelta = new Vector2(1400f, 60f);
-
-            // Botón Opciones (Izquierda de la barra)
-            GameObject btnOpGo = CrearBotonEstilizado("Boton_Opciones", barraGo.transform, new Vector2(-280f, 0f), new Vector2(240f, 44f), "⚙ OPCIONES [O]", pixelFont, new Color(0.22f, 0.20f, 0.28f, 0.92f), new Color(0.95f, 0.88f, 0.65f, 1f));
-            botonAbrirOpciones = btnOpGo.GetComponent<Button>();
-            botonAbrirOpciones.onClick.AddListener(AbrirOpciones);
-
-            // Botón Salir (Derecha de la barra)
-            GameObject btnSalGo = CrearBotonEstilizado("Boton_Salir", barraGo.transform, new Vector2(280f, 0f), new Vector2(240f, 44f), "✕ SALIR [ESC]", pixelFont, new Color(0.28f, 0.16f, 0.18f, 0.92f), new Color(0.95f, 0.70f, 0.70f, 1f));
-            botonSalirJuego = btnSalGo.GetComponent<Button>();
-            botonSalirJuego.onClick.AddListener(SalirDelJuego);
-        }
-
-        // 4. Crear Panel Modal de Opciones
-        Transform panelTr = areaMenu.Find("Panel_Opciones");
-        if (panelTr == null)
-        {
-            panelOpciones = CrearModalOpciones(areaMenu, pixelFont);
-        }
-        else
-        {
-            panelOpciones = panelTr.gameObject;
-        }
-
-        if (panelOpciones != null)
-        {
-            panelOpciones.SetActive(false);
-        }
-    }
-
-    private void ActualizarBadgeCuadrante(Transform parent, string nombreBoton, ref TMP_Text targetText, string titulo, string estado, Color colorAcento)
-    {
-        Transform btnTr = parent.Find(nombreBoton);
-        if (btnTr == null) return;
-
-        // Asegurar que el gráfico del botón (HaloPerimetral) tenga raycastTarget = true (en Boton_Duende estaba en 0)
-        Graphic btnGraphic = btnTr.GetComponent<Graphic>();
-        if (btnGraphic != null)
-        {
-            btnGraphic.raycastTarget = true;
-        }
-
-        HaloPerimetral halo = btnTr.GetComponent<HaloPerimetral>();
-        if (halo != null)
-        {
-            halo.raycastTarget = true;
-            if (nombreBoton == "Boton_Duende" || nombreBoton == "Boton_Nino" || nombreBoton == "Boton_Bruja")
-                halo.disponible = true;
-        }
-
-        Button btn = btnTr.GetComponent<Button>();
-        if (btn != null)
-        {
-            btn.interactable = true;
-            if (btnGraphic != null && btn.targetGraphic == null)
-                btn.targetGraphic = btnGraphic;
-
-            if (nombreBoton == "Boton_Bruja")
-            {
-                btn.onClick = new Button.ButtonClickedEvent();
-                btn.onClick.AddListener(() => AbrirNivel("Cementerio_Nivel3"));
-            }
-            else if (btn.onClick.GetPersistentEventCount() == 0)
-            {
-                if (nombreBoton == "Boton_Duende")
-                    btn.onClick.AddListener(() => AbrirNivel("Cementerio_Nivel1"));
-                else if (nombreBoton == "Boton_Nino")
-                    btn.onClick.AddListener(() => AbrirNivel("Cementerio_Nivel2"));
-            }
-        }
-
-        // Ocultar texto por defecto "Button" si existía
-        Transform textoDefault = btnTr.Find("Text (TMP)");
-        if (textoDefault != null)
-        {
-            textoDefault.gameObject.SetActive(false);
-        }
-
-        Transform badgeTr = btnTr.Find("Badge_Nivel");
-        if (badgeTr == null)
-        {
-            GameObject badgeGo = new GameObject("Badge_Nivel");
-            badgeGo.transform.SetParent(btnTr, false);
-            RectTransform rt = badgeGo.AddComponent<RectTransform>();
-            rt.anchorMin = new Vector2(0.5f, 0.5f);
-            rt.anchorMax = new Vector2(0.5f, 0.5f);
-            rt.anchoredPosition = new Vector2(0f, -40f);
-            rt.sizeDelta = new Vector2(380f, 75f);
-
-            Image bg = badgeGo.AddComponent<Image>();
-            bg.color = new Color(0.06f, 0.05f, 0.09f, 0.85f);
-            bg.raycastTarget = true;
-
-            // Borde superior de acento
-            GameObject bordeGo = new GameObject("Borde_Acento");
-            bordeGo.transform.SetParent(badgeGo.transform, false);
-            RectTransform brt = bordeGo.AddComponent<RectTransform>();
-            brt.anchorMin = new Vector2(0f, 1f);
-            brt.anchorMax = new Vector2(1f, 1f);
-            brt.anchoredPosition = new Vector2(0f, -1f);
-            brt.sizeDelta = new Vector2(0f, 3f);
-            Image bImg = bordeGo.AddComponent<Image>();
-            bImg.color = colorAcento;
-            bImg.raycastTarget = false;
-
-            // Texto de título del nivel
-            GameObject txtGo = new GameObject("Texto_Titulo");
-            txtGo.transform.SetParent(badgeGo.transform, false);
-            RectTransform trt = txtGo.AddComponent<RectTransform>();
-            trt.anchorMin = new Vector2(0f, 0.45f);
-            trt.anchorMax = new Vector2(1f, 1f);
-            trt.anchoredPosition = new Vector2(0f, -4f);
-            trt.sizeDelta = new Vector2(-16f, 0f);
-
-            TextMeshProUGUI tmp = txtGo.AddComponent<TextMeshProUGUI>();
-            tmp.text = titulo;
-            tmp.fontSize = 15;
-            tmp.fontStyle = FontStyles.Bold;
-            tmp.color = colorAcento;
-            tmp.alignment = TextAlignmentOptions.Center;
-            tmp.raycastTarget = false;
-            targetText = tmp;
-
-            // Texto de estado
-            GameObject estGo = new GameObject("Texto_Estado");
-            estGo.transform.SetParent(badgeGo.transform, false);
-            RectTransform ert = estGo.AddComponent<RectTransform>();
-            ert.anchorMin = new Vector2(0f, 0f);
-            ert.anchorMax = new Vector2(1f, 0.45f);
-            ert.anchoredPosition = new Vector2(0f, 3f);
-            ert.sizeDelta = new Vector2(-16f, 0f);
-
-            TextMeshProUGUI tmpEst = estGo.AddComponent<TextMeshProUGUI>();
-            tmpEst.text = estado;
-            tmpEst.fontSize = 10;
-            tmpEst.color = new Color(0.85f, 0.85f, 0.85f, 0.9f);
-            tmpEst.alignment = TextAlignmentOptions.Center;
-            tmpEst.raycastTarget = false;
-        }
-        else
-        {
-            Transform t = badgeTr.Find("Texto_Titulo");
-            if (t != null) targetText = t.GetComponent<TMP_Text>();
-        }
-    }
-
-    private GameObject CrearBotonEstilizado(string nombre, Transform padre, Vector2 pos, Vector2 size, string texto, TMP_FontAsset font, Color colorFondo, Color colorTexto)
-    {
-        GameObject btnGo = new GameObject(nombre);
-        btnGo.transform.SetParent(padre, false);
-        RectTransform rt = btnGo.AddComponent<RectTransform>();
-        rt.anchoredPosition = pos;
-        rt.sizeDelta = size;
-
-        Image img = btnGo.AddComponent<Image>();
-        img.color = colorFondo;
-
-        Button btn = btnGo.AddComponent<Button>();
-        ColorBlock cb = btn.colors;
-        cb.normalColor = colorFondo;
-        cb.highlightedColor = colorFondo * 1.35f;
-        cb.pressedColor = colorFondo * 0.75f;
-        cb.selectedColor = cb.highlightedColor;
-        btn.colors = cb;
-
-        // Texto interno
-        GameObject txtGo = new GameObject("Texto");
-        txtGo.transform.SetParent(btnGo.transform, false);
-        RectTransform trt = txtGo.AddComponent<RectTransform>();
-        trt.anchorMin = Vector2.zero;
-        trt.anchorMax = Vector2.one;
-        trt.sizeDelta = Vector2.zero;
-
-        TextMeshProUGUI tmp = txtGo.AddComponent<TextMeshProUGUI>();
-        tmp.text = texto;
-        tmp.fontSize = 13;
-        tmp.color = colorTexto;
-        if (font != null) tmp.font = font;
-        tmp.alignment = TextAlignmentOptions.Center;
-        tmp.raycastTarget = false;
-
-        return btnGo;
-    }
-
-    private GameObject CrearModalOpciones(Transform padre, TMP_FontAsset font)
-    {
-        // 1. Overlay oscuro de fondo
-        GameObject modalGo = new GameObject("Panel_Opciones");
-        modalGo.transform.SetParent(padre, false);
-        RectTransform mrt = modalGo.AddComponent<RectTransform>();
-        mrt.anchorMin = Vector2.zero;
-        mrt.anchorMax = Vector2.one;
-        mrt.sizeDelta = Vector2.zero;
-
-        Image overlay = modalGo.AddComponent<Image>();
-        overlay.color = new Color(0f, 0f, 0f, 0.82f);
-        overlay.raycastTarget = true;
-
-        // 2. Tarjeta / Ventana central
-        GameObject cardGo = new GameObject("Tarjeta_Opciones");
-        cardGo.transform.SetParent(modalGo.transform, false);
-        RectTransform crt = cardGo.AddComponent<RectTransform>();
-        crt.anchorMin = new Vector2(0.5f, 0.5f);
-        crt.anchorMax = new Vector2(0.5f, 0.5f);
-        crt.anchoredPosition = Vector2.zero;
-        crt.sizeDelta = new Vector2(740f, 520f);
-
-        Image cardBg = cardGo.AddComponent<Image>();
-        cardBg.color = new Color(0.08f, 0.07f, 0.11f, 0.98f); // Obsidiana gótica
-
-        // Borde dorado
-        GameObject marcoGo = new GameObject("Marco_Dorado");
-        marcoGo.transform.SetParent(cardGo.transform, false);
-        RectTransform marcoRt = marcoGo.AddComponent<RectTransform>();
-        marcoRt.anchorMin = Vector2.zero;
-        marcoRt.anchorMax = Vector2.one;
-        marcoRt.sizeDelta = new Vector2(-6f, -6f);
-        Image marcoImg = marcoGo.AddComponent<Image>();
-        marcoImg.color = new Color(0.78f, 0.62f, 0.32f, 0.65f);
-        marcoImg.raycastTarget = false;
-
-        // Interior oscuro sobre el marco
-        GameObject innerGo = new GameObject("Fondo_Interior");
-        innerGo.transform.SetParent(cardGo.transform, false);
-        RectTransform inRt = innerGo.AddComponent<RectTransform>();
-        inRt.anchorMin = Vector2.zero;
-        inRt.anchorMax = Vector2.one;
-        inRt.sizeDelta = new Vector2(-12f, -12f);
-        Image inImg = innerGo.AddComponent<Image>();
-        inImg.color = new Color(0.09f, 0.08f, 0.13f, 1f);
-        inImg.raycastTarget = false;
-
-        // Título del Modal
-        GameObject titGo = new GameObject("Titulo_Opciones");
-        titGo.transform.SetParent(cardGo.transform, false);
-        RectTransform trt = titGo.AddComponent<RectTransform>();
-        trt.anchorMin = new Vector2(0f, 1f);
-        trt.anchorMax = new Vector2(1f, 1f);
-        trt.anchoredPosition = new Vector2(0f, -40f);
-        trt.sizeDelta = new Vector2(0f, 40f);
-
-        TextMeshProUGUI titTmp = titGo.AddComponent<TextMeshProUGUI>();
-        titTmp.text = "OPCIONES DE SONIDO";
-        titTmp.fontSize = 24;
-        titTmp.color = new Color(0.98f, 0.88f, 0.58f, 1f);
-        if (font != null) titTmp.font = font;
-        titTmp.alignment = TextAlignmentOptions.Center;
-
-        // Subtítulo descriptivo
-        GameObject subGo = new GameObject("Subtitulo_Opciones");
-        subGo.transform.SetParent(cardGo.transform, false);
-        RectTransform srt = subGo.AddComponent<RectTransform>();
-        srt.anchorMin = new Vector2(0f, 1f);
-        srt.anchorMax = new Vector2(1f, 1f);
-        srt.anchoredPosition = new Vector2(0f, -72f);
-        srt.sizeDelta = new Vector2(0f, 25f);
-
-        TextMeshProUGUI subTmp = subGo.AddComponent<TextMeshProUGUI>();
-        subTmp.text = "Ajusta los niveles de audio del panteón";
-        subTmp.fontSize = 11;
-        subTmp.color = new Color(0.70f, 0.66f, 0.60f, 1f);
-        if (font != null) subTmp.font = font;
-        subTmp.alignment = TextAlignmentOptions.Center;
-
-        // Contenedor de Sliders
-        float posY = -135f;
-        sliderGeneral = CrearFilaSlider(cardGo.transform, "Fila_General", "VOLUMEN GENERAL", "Control maestro de todo el juego", posY, font, out textoValorGeneral, new Color(0.95f, 0.80f, 0.40f, 1f));
-        posY -= 85f;
-        sliderEnemigos = CrearFilaSlider(cardGo.transform, "Fila_Enemigos", "VOLUMEN ENEMIGOS", "Gritos, pasos y ataques de duendes y jefes", posY, font, out textoValorEnemigos, new Color(0.95f, 0.40f, 0.40f, 1f));
-        posY -= 85f;
-        sliderMusica = CrearFilaSlider(cardGo.transform, "Fila_Musica", "VOLUMEN MÚSICA", "Música ambiental y temas de fondo", posY, font, out textoValorMusica, new Color(0.40f, 0.80f, 0.95f, 1f));
-
-        // Botones de acción en el pie del modal
-        // 1. Botón Restablecer
-        GameObject btnResGo = CrearBotonEstilizado("Boton_Restablecer", cardGo.transform, new Vector2(-150f, -200f), new Vector2(210f, 42f), "RESTABLECER", font, new Color(0.24f, 0.22f, 0.28f, 1f), new Color(0.85f, 0.82f, 0.80f, 1f));
-        botonRestablecerOpciones = btnResGo.GetComponent<Button>();
-        botonRestablecerOpciones.onClick.AddListener(RestablecerValoresDefault);
-
-        // 2. Botón Guardar y Volver
-        GameObject btnVolGo = CrearBotonEstilizado("Boton_GuardarVolver", cardGo.transform, new Vector2(150f, -200f), new Vector2(240f, 42f), "GUARDAR Y VOLVER", font, new Color(0.55f, 0.38f, 0.16f, 1f), new Color(1f, 0.95f, 0.75f, 1f));
-        botonCerrarOpciones = btnVolGo.GetComponent<Button>();
-        botonCerrarOpciones.onClick.AddListener(CerrarOpciones);
-
-        return modalGo;
-    }
-
-    private Slider CrearFilaSlider(Transform padre, string nombreFila, string titulo, string descripcion, float posY, TMP_FontAsset font, out TMP_Text valorText, Color colorFill)
-    {
-        GameObject filaGo = new GameObject(nombreFila);
-        filaGo.transform.SetParent(padre, false);
-        RectTransform frt = filaGo.AddComponent<RectTransform>();
-        frt.anchorMin = new Vector2(0.5f, 0.5f);
-        frt.anchorMax = new Vector2(0.5f, 0.5f);
-        frt.anchoredPosition = new Vector2(0f, posY);
-        frt.sizeDelta = new Vector2(660f, 75f);
-
-        // Título de la categoría
-        GameObject titGo = new GameObject("Titulo");
-        titGo.transform.SetParent(filaGo.transform, false);
-        RectTransform trt = titGo.AddComponent<RectTransform>();
-        trt.anchorMin = new Vector2(0f, 1f);
-        trt.anchorMax = new Vector2(0.7f, 1f);
-        trt.anchoredPosition = new Vector2(180f, -12f);
-        trt.sizeDelta = new Vector2(360f, 22f);
-
-        TextMeshProUGUI ttmp = titGo.AddComponent<TextMeshProUGUI>();
-        ttmp.text = titulo;
-        ttmp.fontSize = 12;
-        ttmp.fontStyle = FontStyles.Bold;
-        ttmp.color = Color.white;
-        if (font != null) ttmp.font = font;
-
-        // Slider
-        GameObject sliderGo = new GameObject("Slider");
-        sliderGo.transform.SetParent(filaGo.transform, false);
-        RectTransform srt = sliderGo.AddComponent<RectTransform>();
-        srt.anchorMin = new Vector2(0f, 0.5f);
-        srt.anchorMax = new Vector2(0f, 0.5f);
-        srt.anchoredPosition = new Vector2(250f, -14f);
-        srt.sizeDelta = new Vector2(440f, 20f);
-
-        Slider slider = sliderGo.AddComponent<Slider>();
-        slider.minValue = 0f;
-        slider.maxValue = 1f;
-
-        // Background track del slider
-        GameObject bgGo = new GameObject("Background");
-        bgGo.transform.SetParent(sliderGo.transform, false);
-        RectTransform bgrt = bgGo.AddComponent<RectTransform>();
-        bgrt.anchorMin = Vector2.zero;
-        bgrt.anchorMax = Vector2.one;
-        bgrt.sizeDelta = Vector2.zero;
-        Image bgImg = bgGo.AddComponent<Image>();
-        bgImg.color = new Color(0.18f, 0.16f, 0.22f, 1f);
-
-        // Fill Area
-        GameObject fillAreaGo = new GameObject("Fill Area");
-        fillAreaGo.transform.SetParent(sliderGo.transform, false);
-        RectTransform fart = fillAreaGo.AddComponent<RectTransform>();
-        fart.anchorMin = new Vector2(0f, 0.25f);
-        fart.anchorMax = new Vector2(1f, 0.75f);
-        fart.sizeDelta = new Vector2(-10f, 0f);
-
-        GameObject fillGo = new GameObject("Fill");
-        fillGo.transform.SetParent(fillAreaGo.transform, false);
-        RectTransform frtFill = fillGo.AddComponent<RectTransform>();
-        frtFill.sizeDelta = Vector2.zero;
-        Image fillImg = fillGo.AddComponent<Image>();
-        fillImg.color = colorFill;
-        slider.fillRect = frtFill;
-
-        // Handle Slide Area
-        GameObject handleAreaGo = new GameObject("Handle Slide Area");
-        handleAreaGo.transform.SetParent(sliderGo.transform, false);
-        RectTransform hart = handleAreaGo.AddComponent<RectTransform>();
-        hart.anchorMin = Vector2.zero;
-        hart.anchorMax = Vector2.one;
-        hart.sizeDelta = new Vector2(-10f, 0f);
-
-        GameObject handleGo = new GameObject("Handle");
-        handleGo.transform.SetParent(handleAreaGo.transform, false);
-        RectTransform hrt = handleGo.AddComponent<RectTransform>();
-        hrt.sizeDelta = new Vector2(20f, 26f);
-        Image hImg = handleGo.AddComponent<Image>();
-        hImg.color = new Color(1f, 0.98f, 0.90f, 1f);
-        slider.handleRect = hrt;
-        slider.targetGraphic = hImg;
-
-        // Texto de valor porcentual (a la derecha del slider)
-        GameObject valGo = new GameObject("Texto_Valor");
-        valGo.transform.SetParent(filaGo.transform, false);
-        RectTransform vrt = valGo.AddComponent<RectTransform>();
-        vrt.anchorMin = new Vector2(1f, 0.5f);
-        vrt.anchorMax = new Vector2(1f, 0.5f);
-        vrt.anchoredPosition = new Vector2(-40f, -14f);
-        vrt.sizeDelta = new Vector2(70f, 25f);
-
-        TextMeshProUGUI vtmp = valGo.AddComponent<TextMeshProUGUI>();
-        vtmp.text = "100%";
-        vtmp.fontSize = 13;
-        vtmp.fontStyle = FontStyles.Bold;
-        vtmp.color = colorFill;
-        if (font != null) vtmp.font = font;
-        vtmp.alignment = TextAlignmentOptions.Right;
-        valorText = vtmp;
-
-        return slider;
+        rect.anchorMin = rect.anchorMax = new Vector2(0.5f,0.5f);
+        rect.sizeDelta = bounds.size;
+        rect.anchoredPosition = ArtPoint(bounds.center);
     }
 }

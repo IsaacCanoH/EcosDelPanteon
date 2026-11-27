@@ -24,6 +24,7 @@ public class CinematicDialogueUI : MonoBehaviour
     private bool isTyping = false;
     private string fullTargetText = "";
     private bool isShowing = false;
+    public bool IsShowing { get { return isShowing; } }
     private float previousTimeScale = 1f;
 
     private Cainos.PixelArtTopDown_Basic.Level2CharacterController cachedPlayerMove;
@@ -51,7 +52,7 @@ public class CinematicDialogueUI : MonoBehaviour
         if (!isShowing) return;
 
         // Avanzar texto o cerrar diálogo ÚNICAMENTE al presionar la tecla P
-        if (GameControls.CluePressed || Input.GetKeyDown(KeyCode.P))
+        if (GameControls.CluePressed)
         {
             if (isTyping)
             {

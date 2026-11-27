@@ -43,7 +43,7 @@ public sealed class Level2Exit : MonoBehaviour
         if (health != null && health.currentHealth <= 0) { hint.text = ""; return; }
         bool complete = nearbyPlayer.Count == ToyCollector.RequiredToys;
         hint.text = complete ? "Juguetes recuperados · E: salir del panteón" : "La salida espera: recupera los tres juguetes.";
-        if (complete && Input.GetKeyDown(KeyCode.E))
+        if (complete && (GameControls.SearchPressed || (AndroidTouchInput.IsAndroid && GameControls.SearchHeld)))
         {
             TriggerExit();
         }

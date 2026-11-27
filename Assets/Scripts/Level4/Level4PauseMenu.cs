@@ -20,6 +20,8 @@ public sealed class Level4PauseMenu : MonoBehaviour
 
     private enum View { Hidden, Paused, Victory }
     private View view;
+    public bool IsPaused { get { return view == View.Paused; } }
+    public bool IsVictory { get { return view == View.Victory; } }
     private Cainos.PixelArtTopDown_Basic.TopDownCharacterController movement;
     private Rigidbody2D body;
     private Animator animator;

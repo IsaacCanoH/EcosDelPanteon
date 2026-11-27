@@ -55,6 +55,7 @@ public class Level2VictoryManager : MonoBehaviour
 
     private bool victoryTriggered = false;
     private bool victoryCardInteractive = false;
+    public bool IsEnding { get { return victoryTriggered; } }
     private bool actionInProgress = false;
 
     private GameObject playerObj;
@@ -1003,7 +1004,7 @@ public class Level2VictoryManager : MonoBehaviour
         Time.timeScale = 1f;
         AudioListener.pause = false;
 
-        // 3. FASE 1 (Igual al Nivel 1): Mostrar primero el mensaje de VICTORIA ("ABANDONANDO EL PANTEÓN...") + confeti durante 2.4s
+        // 3. FASE 1 (Igual al Nivel 1): Mostrar primero el mensaje de VICTORIA ("SALIENDO DE LA ZONA...") + confeti durante 2.4s
         ShowVictoryCard(showButtons: false, blackBackground: false);
         if (victoryCelebration != null) victoryCelebration.Show();
 
@@ -1211,13 +1212,13 @@ public class Level2VictoryManager : MonoBehaviour
         if (victoryBodyText != null)
         {
             victoryBodyText.text = IsLevel3Scene()
-                ? "Recuperaste la Poción Morada, el Muñeco Vudú y la Vela.\nEl panteón vuelve a estar en calma."
-                : "Recuperaste los tres juguetes.\nEl panteón vuelve a estar en calma.";
+                ? "Recuperaste la Poción Morada, el Muñeco Vudú y la Vela.\nEl panteón está en calma… por ahora."
+                : "Recuperaste los tres juguetes.\nEl panteón está en calma… por ahora.";
         }
 
         if (victoryHintText != null)
         {
-            victoryHintText.text = "ABANDONANDO EL PANTEÓN...";
+            victoryHintText.text = "SALIENDO DE LA ZONA...";
             victoryHintText.gameObject.SetActive(!showButtons);
         }
 
@@ -1258,7 +1259,8 @@ public class Level2VictoryManager : MonoBehaviour
 
     private void HandleDirectVictoryButtonsInput()
     {
-        Vector2 mousePos = Input.mousePosition;
+        if (AndroidTouchInput.IsAndroid) return;
+        Vector2 mousePos = GameControls.PointerPosition;
 
         bool overNext = nextBtnRt != null && RectTransformUtility.RectangleContainsScreenPoint(nextBtnRt, mousePos, null);
         bool overRetry = retryBtnRt != null && RectTransformUtility.RectangleContainsScreenPoint(retryBtnRt, mousePos, null);
@@ -1270,7 +1272,7 @@ public class Level2VictoryManager : MonoBehaviour
         if (menuBtnImg != null) menuBtnImg.color = overMenu ? secondaryBtnHover : secondaryBtnNormal;
         if (quitBtnImg != null) quitBtnImg.color = overQuit ? secondaryBtnHover : secondaryBtnNormal;
 
-        if (Input.GetMouseButtonDown(0))
+        if (GameControls.PointerPressed)
         {
             if (overNext) { OnNextLevelClicked(); return; }
             if (overRetry) { OnRetryClicked(); return; }
@@ -1278,19 +1280,19 @@ public class Level2VictoryManager : MonoBehaviour
             if (overQuit) { OnQuitClicked(); return; }
         }
 
-        if (Input.GetKeyDown(KeyCode.Return) || Input.GetKeyDown(KeyCode.KeypadEnter))
+        if (GameControls.NextLevelPressed)
         {
             OnNextLevelClicked();
         }
-        else if (Input.GetKeyDown(KeyCode.R))
+        else if (GameControls.RetryLevelPressed)
         {
             OnRetryClicked();
         }
-        else if (Input.GetKeyDown(KeyCode.M))
+        else if (GameControls.ReturnToMenuPressed)
         {
             OnMenuClicked();
         }
-        else if (Input.GetKeyDown(KeyCode.Escape))
+        else if (GameControls.CancelPressed)
         {
             OnQuitClicked();
         }
@@ -1381,12 +1383,7 @@ public class Level2VictoryManager : MonoBehaviour
 
     private void SetupProceduralUIIfMissing()
     {
-        if (FindObjectOfType<EventSystem>() == null)
-        {
-            GameObject es = new GameObject("EventSystem");
-            es.AddComponent<EventSystem>();
-            es.AddComponent<StandaloneInputModule>();
-        }
+        GameInputUI.EnsureEventSystem();
 
         Sprite parchmentSprite = null;
         TMP_FontAsset pixelFont = Resources.Load<TMP_FontAsset>("Fonts & Materials/PressStart2P-Regular SDF");
@@ -1532,14 +1529,14 @@ public class Level2VictoryManager : MonoBehaviour
         bodyRt.sizeDelta = new Vector2(500f, 124f);
         victoryBodyText = bodyObj.AddComponent<TextMeshProUGUI>();
         if (pixelFont != null) victoryBodyText.font = pixelFont;
-        victoryBodyText.text = "Recuperaste los tres juguetes.\nEl panteón vuelve a estar en calma.";
+        victoryBodyText.text = "Recuperaste los tres juguetes.\nEl panteón está en calma… por ahora.";
         victoryBodyText.alignment = TextAlignmentOptions.TopLeft;
         victoryBodyText.fontSize = 16f;
         victoryBodyText.lineSpacing = 12f;
         victoryBodyText.color = new Color(0.23f, 0.18f, 0.13f, 1f);
         victoryBodyText.enableWordWrapping = true;
 
-        // Texto inferior durante la primera parte de la cinemática ("ABANDONANDO EL PANTEÓN...")
+        // Texto inferior durante la primera parte de la cinemática ("SALIENDO DE LA ZONA...")
         GameObject hintObj = new GameObject("Ayuda_Resultado");
         hintObj.transform.SetParent(cardObj.transform, false);
         RectTransform hintRt = hintObj.AddComponent<RectTransform>();
@@ -1550,7 +1547,7 @@ public class Level2VictoryManager : MonoBehaviour
         hintRt.sizeDelta = new Vector2(500f, 32f);
         victoryHintText = hintObj.AddComponent<TextMeshProUGUI>();
         if (pixelFont != null) victoryHintText.font = pixelFont;
-        victoryHintText.text = "ABANDONANDO EL PANTEÓN...";
+        victoryHintText.text = "SALIENDO DE LA ZONA...";
         victoryHintText.alignment = TextAlignmentOptions.TopLeft;
         victoryHintText.fontSize = 13f;
         victoryHintText.color = new Color(0.23f, 0.18f, 0.13f, 1f);

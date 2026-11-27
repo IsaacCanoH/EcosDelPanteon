@@ -436,11 +436,11 @@ public class PlayerWeaponController : MonoBehaviour
 
     private void HandleWeaponSwitchInput()
     {
-        if (Input.GetKeyDown(KeyCode.Alpha1) || Input.GetKeyDown(KeyCode.Keypad1))
+        if (GameControls.WeaponSelected(1))
         {
             if (hasLantern) EquipWeapon(WeaponType.Lantern);
         }
-        else if (Input.GetKeyDown(KeyCode.Alpha2) || Input.GetKeyDown(KeyCode.Keypad2))
+        else if (GameControls.WeaponSelected(2))
         {
             if (hasBigKnife)
             {
@@ -452,7 +452,7 @@ public class PlayerWeaponController : MonoBehaviour
                     ParchmentMessageUI.Instance.Show("ARMA BLOQUEADA", "Recoge el Cuchillo junto al primer juguete para desbloquearlo.", null, null, true);
             }
         }
-        else if (Input.GetKeyDown(KeyCode.Alpha3) || Input.GetKeyDown(KeyCode.Keypad3))
+        else if (GameControls.WeaponSelected(3))
         {
             if (hasMachete)
             {
@@ -464,7 +464,7 @@ public class PlayerWeaponController : MonoBehaviour
                     ParchmentMessageUI.Instance.Show("ARMA BLOQUEADA", "Derrota al Niño Espectral y recoge el Machete en el altar para desbloquearlo.", null, null, true);
             }
         }
-        else if (Input.GetKeyDown(KeyCode.Q) || Mathf.Abs(Input.mouseScrollDelta.y) > 0.1f)
+        else if (GameControls.WeaponCyclePressed)
         {
             CycleNextWeapon();
         }
@@ -472,7 +472,7 @@ public class PlayerWeaponController : MonoBehaviour
 
     private void HandleAttackInput()
     {
-        bool attackPressed = GameControls.LanternPressed || Input.GetKeyDown(KeyCode.F) || Input.GetKeyDown(KeyCode.J) || Input.GetMouseButtonDown(0);
+        bool attackPressed = GameControls.AttackPressed;
         if (!attackPressed || Time.time < nextAttackAt)
             return;
 

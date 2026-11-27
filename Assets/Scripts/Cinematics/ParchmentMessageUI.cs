@@ -59,7 +59,7 @@ public class ParchmentMessageUI : MonoBehaviour
         if (!isOpen || ChangedThisFrame) return;
 
         // Se quita ÚNICAMENTE con la letra P (sin Espacio, sin Enter, sin Escape ni clicks)
-        if (GameControls.CluePressed || Input.GetKeyDown(KeyCode.P))
+        if (GameControls.CluePressed)
         {
             Close();
         }
